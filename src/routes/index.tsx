@@ -1,24 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { ControlsScreen } from "@/components/game/ControlsScreen";
+import { GameCanvas } from "@/components/game/GameCanvas";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+const title = "Two Buttons, One Way Out — Co-op Puzzle Platformer";
+const description =
+  "A two-player cooperative puzzle platformer prototype: colour-locked switches, stacking, and one very unreliable bridge. Level 1 playable in your browser.";
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title },
+      { name: "description", content: description },
+      { property: "og:title", content: title },
+      { property: "og:description", content: description },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
+  const [started, setStarted] = useState(false);
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="min-h-screen bg-background px-4 py-10">
+      <div className="mx-auto w-full max-w-5xl">
+        {started ? <GameCanvas /> : <ControlsScreen onStart={() => setStarted(true)} />}
+      </div>
+    </main>
   );
 }
