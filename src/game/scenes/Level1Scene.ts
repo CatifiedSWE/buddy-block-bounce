@@ -216,7 +216,21 @@ export class Level1Scene extends Phaser.Scene {
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);
-    this.physics.add.collider(this.blue, this.red);
+    // Player-vs-player: whoever is underneath becomes temporarily immovable so
+    // the one on top can be carried instead of sinking through.
+    this.physics.add.collider(this.blue, this.red, undefined, (a, b) => {
+      const pa = a as unknown as Player;
+      const pb = a === (this.blue as unknown as object) ? this.red : this.blue;
+      const other = pa === this.blue ? this.red : this.blue;
+      void pb;
+      const top = pa.y < other.y ? pa : other;
+      const bottom = top === pa ? other : pa;
+      const stacked = bottom.y - top.y > 18;
+      bottom.body_.immovable = stacked;
+      top.body_.immovable = false;
+      void b;
+      return true;
+    });
 
     const mid = (this.blue.x + this.red.x) / 2;
     this.cameras.main.centerOn(mid, this.blue.y - 40);
@@ -317,6 +331,8 @@ export class Level1Scene extends Phaser.Scene {
   override update(_time: number, delta: number) {
     if (this.finished) return;
 
+    this.blue.body_.immovable = false;
+    this.red.body_.immovable = false;
     this.updateStacking();
     this.players.forEach((p) => p.tick(delta));
     this.carry();
