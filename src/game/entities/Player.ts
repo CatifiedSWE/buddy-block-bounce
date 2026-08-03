@@ -53,7 +53,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get onFloor(): boolean {
     const b = this.body_;
-    return b.blocked.down || b.touching.down;
+    return b.blocked.down || b.touching.down || this.standingOnPartner;
   }
 
   respawn() {

@@ -216,21 +216,6 @@ export class Level1Scene extends Phaser.Scene {
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);
-    // Player-vs-player: whoever is underneath becomes temporarily immovable so
-    // the one on top can be carried instead of sinking through.
-    this.physics.add.collider(this.blue, this.red, undefined, (a, b) => {
-      const pa = a as unknown as Player;
-      const pb = a === (this.blue as unknown as object) ? this.red : this.blue;
-      const other = pa === this.blue ? this.red : this.blue;
-      void pb;
-      const top = pa.y < other.y ? pa : other;
-      const bottom = top === pa ? other : pa;
-      const stacked = bottom.y - top.y > 18;
-      bottom.body_.immovable = stacked;
-      top.body_.immovable = false;
-      void b;
-      return true;
-    });
 
     const mid = (this.blue.x + this.red.x) / 2;
     this.cameras.main.centerOn(mid, this.blue.y - 40);
@@ -331,11 +316,8 @@ export class Level1Scene extends Phaser.Scene {
   override update(_time: number, delta: number) {
     if (this.finished) return;
 
-    this.blue.body_.immovable = false;
-    this.red.body_.immovable = false;
-    this.updateStacking();
+    this.resolveStacking();
     this.players.forEach((p) => p.tick(delta));
-    this.carry();
     Object.values(this.buttons).forEach((b) => b.update(this.players));
 
     this.updateCamera(delta);
@@ -346,23 +328,35 @@ export class Level1Scene extends Phaser.Scene {
     this.updateExit(delta);
   }
 
-  /** Flags whichever player is currently riding on their partner's head. */
-  private updateStacking() {
-    const isOn = (top: Player, bottom: Player) =>
-      top.body_.touching.down && bottom.body_.touching.up && top.y < bottom.y;
-    this.blue.standingOnPartner = isOn(this.blue, this.red);
-    this.red.standingOnPartner = isOn(this.red, this.blue);
-  }
+  /**
+   * Manual stack resolution: Arcade can't reliably keep one dynamic body on
+   * top of another, so we snap the upper player onto their partner's head and
+   * let them ride along.
+   */
+  private resolveStacking() {
+    this.blue.standingOnPartner = false;
+    this.red.standingOnPartner = false;
 
-  /** Lets a stacked player ride along on their partner's shoulders. */
-  private carry() {
     const pairs: Array<[Player, Player]> = [
       [this.blue, this.red],
       [this.red, this.blue],
     ];
+
     pairs.forEach(([top, bottom]) => {
-      if (top.body_.touching.down && bottom.body_.touching.up && top.y < bottom.y) {
-        top.x += bottom.body_.deltaX();
+      const tb = top.body_;
+      const bb = bottom.body_;
+      const overlapX = Math.min(tb.right, bb.right) - Math.max(tb.left, bb.left);
+      const feet = tb.bottom;
+      const head = bb.top;
+      const landing = feet >= head - 4 && feet <= head + 22 && tb.top < head;
+      if (overlapX > 6 && tb.velocity.y >= -20 && landing) {
+        const dy = feet - head;
+        top.y -= dy;
+        tb.y -= dy;
+        if (tb.velocity.y > 0) tb.velocity.y = 0;
+        top.x += bb.deltaX();
+        tb.x += bb.deltaX();
+        top.standingOnPartner = true;
       }
     });
   }
