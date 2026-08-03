@@ -41,7 +41,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setOffset(2, 2);
     body.setMaxVelocity(PHYSICS.moveSpeed, 1400);
     body.setDragX(PHYSICS.drag);
-    body.pushable = false;
+    // Players stay pushable so Arcade can separate them - this is what makes
+    // standing on each other (and gentle nudging) work.
+    body.pushable = true;
     this.setDepth(20);
   }
 
