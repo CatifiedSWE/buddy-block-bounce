@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type Phaser from "phaser";
+import type * as Phaser from "phaser";
 
 /**
  * Mounts the Phaser game. Phaser is imported lazily so it never touches the

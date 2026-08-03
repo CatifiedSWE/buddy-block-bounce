@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { COLORS, PHYSICS, TEX, TILE } from "../utils/constants";
 import { Player, type PlayerKeys } from "../entities/Player";
 import { ColorButton } from "../mechanics/Button";

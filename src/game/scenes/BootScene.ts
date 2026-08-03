@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { COLORS, TEX, TILE } from "../utils/constants";
 import { generateTextures } from "../utils/textures";
 
