@@ -18,6 +18,9 @@ export function GameCanvas() {
       if (disposed || !hostRef.current) return;
       const game = createGame(hostRef.current);
       gameRef.current = game;
+      if (import.meta.env.DEV) {
+        (window as unknown as { __game?: Phaser.Game }).__game = game;
+      }
       game.events.on("level-complete", () => setComplete(true));
     })();
 
