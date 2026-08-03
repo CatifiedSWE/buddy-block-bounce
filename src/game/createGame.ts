@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { Level1Scene } from "./scenes/Level1Scene";
 import { COLORS, PHYSICS } from "./utils/constants";

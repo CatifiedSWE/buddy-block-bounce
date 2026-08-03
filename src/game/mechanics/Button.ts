@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { COLORS, TEX, type PlayerId } from "../utils/constants";
 import type { Player } from "../entities/Player";
 import { sfx } from "../utils/sfx";

@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { PHYSICS, TEX, type PlayerId } from "../utils/constants";
 import { sfx } from "../utils/sfx";
 

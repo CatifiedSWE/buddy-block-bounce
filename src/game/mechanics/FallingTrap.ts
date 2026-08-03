@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { TEX } from "../utils/constants";
 import { sfx } from "../utils/sfx";
 
