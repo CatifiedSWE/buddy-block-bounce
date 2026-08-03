@@ -23,6 +23,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private buffer = 0;
   private wasOnFloor = true;
   private squash = 1;
+  /** Set by the scene when this player is stood on their partner's head. */
+  standingOnPartner = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, id: PlayerId, keys: PlayerKeys) {
     super(scene, x, y, id === "blue" ? TEX.playerBlue : TEX.playerRed);
@@ -98,7 +100,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     else this.buffer = Math.max(0, this.buffer - deltaMs);
 
     if (this.buffer > 0 && this.coyote > 0) {
-      body.setVelocityY(-PHYSICS.jumpVelocity);
+      // A boosted launch when using your partner as a springboard.
+      body.setVelocityY(-PHYSICS.jumpVelocity * (this.standingOnPartner ? 1.22 : 1));
       this.buffer = 0;
       this.coyote = 0;
       this.squash = 1.18;

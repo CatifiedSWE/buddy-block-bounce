@@ -317,6 +317,7 @@ export class Level1Scene extends Phaser.Scene {
   override update(_time: number, delta: number) {
     if (this.finished) return;
 
+    this.updateStacking();
     this.players.forEach((p) => p.tick(delta));
     this.carry();
     Object.values(this.buttons).forEach((b) => b.update(this.players));
@@ -327,6 +328,14 @@ export class Level1Scene extends Phaser.Scene {
     this.updateTrap();
     this.updateRespawn();
     this.updateExit(delta);
+  }
+
+  /** Flags whichever player is currently riding on their partner's head. */
+  private updateStacking() {
+    const isOn = (top: Player, bottom: Player) =>
+      top.body_.touching.down && bottom.body_.touching.up && top.y < bottom.y;
+    this.blue.standingOnPartner = isOn(this.blue, this.red);
+    this.red.standingOnPartner = isOn(this.red, this.blue);
   }
 
   /** Lets a stacked player ride along on their partner's shoulders. */
