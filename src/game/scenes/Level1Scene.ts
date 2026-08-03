@@ -40,7 +40,6 @@ export class Level1Scene extends Phaser.Scene {
   private struggleHintShown = false;
 
   private camZoom = 1;
-  snaps = 0;
 
   constructor() {
     super("Level1");
@@ -358,7 +357,6 @@ export class Level1Scene extends Phaser.Scene {
         top.x += bb.deltaX();
         tb.x += bb.deltaX();
         top.standingOnPartner = true;
-        this.snaps++;
       }
     });
   }
