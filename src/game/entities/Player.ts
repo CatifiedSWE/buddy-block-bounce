@@ -18,7 +18,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   spawnX: number;
   spawnY: number;
 
-  private readonly keys: PlayerKeys;
+  private keys: PlayerKeys;
   private coyote = 0;
   private buffer = 0;
   private wasOnFloor = true;
@@ -67,6 +67,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   setSpawn(x: number, y: number) {
     this.spawnX = x;
     this.spawnY = y;
+  }
+
+  /** Rewire the movement keys (used for the Level 3 twist mechanic). */
+  setKeys(keys: PlayerKeys) {
+    this.keys = { left: keys.left, right: keys.right, jump: keys.jump };
   }
 
   tick(deltaMs: number) {

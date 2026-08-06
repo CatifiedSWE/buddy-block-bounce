@@ -99,5 +99,20 @@ export function generateTextures(scene: Phaser.Scene) {
   rect(28, 60, 16, 6, 0xd7e2ff, 0.5);
   g.generateTexture(TEX.exit, 72, 128);
 
+  // ---- spikes -----------------------------------------------------------
+  g.clear();
+  rect(0, 24, 32, 8, COLORS.stoneDark);
+  rect(0, 24, 32, 2, COLORS.stoneLight, 0.4);
+  for (let i = 0; i < 4; i++) {
+    const bx = i * 8;
+    g.fillStyle(0xd93835, 1);
+    g.fillTriangle(bx + 4, 4, bx, 24, bx + 8, 24);
+    g.fillStyle(0x758399, 1);
+    g.fillTriangle(bx + 4, 4, bx + 2, 24, bx + 6, 24);
+    g.fillStyle(0xffffff, 0.3);
+    g.fillRect(bx + 3, 4, 2, 3);
+  }
+  g.generateTexture(TEX.spike, 32, 32);
+
   g.destroy();
 }

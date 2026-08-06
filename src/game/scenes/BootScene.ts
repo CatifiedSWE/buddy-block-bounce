@@ -19,6 +19,7 @@ export class BootScene extends Phaser.Scene {
     void COLORS;
     void TEX;
     void TILE;
-    this.scene.start("Level1");
+    const targetLevel = (this.game.registry.get("initialLevel") as string) || "DemoLevel";
+    this.scene.start(targetLevel);
   }
 }

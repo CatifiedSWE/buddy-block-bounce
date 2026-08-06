@@ -5,7 +5,7 @@ import { GameCanvas } from "@/components/game/GameCanvas";
 
 const title = "Two Buttons, One Way Out — Co-op Puzzle Platformer";
 const description =
-  "A two-player cooperative puzzle platformer prototype: colour-locked switches, stacking, and one very unreliable bridge. Level 1 playable in your browser.";
+  "A two-player cooperative puzzle platformer prototype: colour-locked switches, stacking, and one very unreliable bridge. Demo level playable in your browser.";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,12 +22,16 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  const [started, setStarted] = useState(false);
+  const [startedLevel, setStartedLevel] = useState<string | null>(null);
 
   return (
     <main className="min-h-screen bg-background px-4 py-10">
       <div className="mx-auto w-full max-w-5xl">
-        {started ? <GameCanvas /> : <ControlsScreen onStart={() => setStarted(true)} />}
+        {startedLevel ? (
+          <GameCanvas initialLevel={startedLevel} />
+        ) : (
+          <ControlsScreen onStart={(levelKey = "DemoLevel") => setStartedLevel(levelKey)} />
+        )}
       </div>
     </main>
   );

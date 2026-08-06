@@ -55,6 +55,29 @@ export class Door {
     this.burst();
   }
 
+  close(durationMs = 500) {
+    if (!this.isOpen && !this.opening) return;
+    this.isOpen = false;
+    this.opening = false;
+    sfx.door();
+
+    this.sprite.setVisible(true);
+    const body = this.sprite.body as Phaser.Physics.Arcade.StaticBody;
+    body.enable = true;
+
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleY: 1,
+      alpha: 1,
+      duration: durationMs,
+      ease: "Sine.easeInOut",
+      onUpdate: () => body.updateFromGameObject(),
+      onComplete: () => {
+        body.updateFromGameObject();
+      },
+    });
+  }
+
   private burst() {
     const p = this.scene.add.particles(this.sprite.x, this.sprite.y - this.sprite.height / 2, TEX.spark, {
       speed: { min: 40, max: 150 },

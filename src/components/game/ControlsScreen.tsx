@@ -1,5 +1,5 @@
 interface ControlsScreenProps {
-  onStart: () => void;
+  onStart: (levelKey?: string) => void;
 }
 
 const KEY = "inline-flex h-9 min-w-9 items-center justify-center rounded-md border-2 px-2 font-pixel text-[10px]";
@@ -17,8 +17,7 @@ export function ControlsScreen({ onStart }: ControlsScreenProps) {
           ONE WAY OUT
         </h1>
         <p className="mx-auto max-w-md font-mono text-sm text-muted-foreground">
-          Level 1 teaches everything it needs to. Two players, one keyboard, about a minute
-          underground.
+          Select a level to play. Two players, one keyboard, about a minute underground.
         </p>
       </div>
 
@@ -48,13 +47,39 @@ export function ControlsScreen({ onStart }: ControlsScreenProps) {
         </div>
       </div>
 
-      <button
-        onClick={onStart}
-        className="group relative inline-flex items-center gap-3 rounded-md bg-primary px-8 py-4 font-pixel text-xs text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
-      >
-        ENTER THE CAVE
-        <span className="transition-transform group-hover:translate-x-1">▶</span>
-      </button>
+      <div className="flex flex-wrap justify-center gap-4">
+        <button
+          onClick={() => onStart("DemoLevel")}
+          className="group relative inline-flex items-center gap-3 rounded-md bg-primary px-6 py-4 font-pixel text-xs text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
+        >
+          START DEMO LEVEL
+          <span className="transition-transform group-hover:translate-x-1">▶</span>
+        </button>
+
+        <button
+          onClick={() => onStart("Level1")}
+          className="group relative inline-flex items-center gap-3 rounded-md border-2 border-primary bg-background px-6 py-4 font-pixel text-xs text-primary transition-transform hover:-translate-y-0.5 hover:bg-accent active:translate-y-0"
+        >
+          START LEVEL 1
+          <span className="transition-transform group-hover:translate-x-1">▶</span>
+        </button>
+
+        <button
+          onClick={() => onStart("Level2")}
+          className="group relative inline-flex items-center gap-3 rounded-md border-2 border-primary bg-background px-6 py-4 font-pixel text-xs text-primary transition-transform hover:-translate-y-0.5 hover:bg-accent active:translate-y-0"
+        >
+          START LEVEL 2
+          <span className="transition-transform group-hover:translate-x-1">▶</span>
+        </button>
+
+        <button
+          onClick={() => onStart("Level3")}
+          className="group relative inline-flex items-center gap-3 rounded-md border-2 border-primary bg-background px-6 py-4 font-pixel text-xs text-primary transition-transform hover:-translate-y-0.5 hover:bg-accent active:translate-y-0"
+        >
+          START LEVEL 3
+          <span className="transition-transform group-hover:translate-x-1">▶</span>
+        </button>
+      </div>
     </div>
   );
 }
