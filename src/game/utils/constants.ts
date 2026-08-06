@@ -35,6 +35,7 @@ export const TEX = {
   doorRed: "tex-door-red",
   doorGate: "tex-door-gate",
   exit: "tex-exit",
+  spike: "tex-spike",
 } as const;
 
 export type PlayerId = "blue" | "red";

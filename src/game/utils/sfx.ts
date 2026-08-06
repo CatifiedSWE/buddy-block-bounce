@@ -70,6 +70,17 @@ export const sfx = {
   trap: () => tone({ freq: 400, slideTo: 60, duration: 0.45, volume: 0.14, type: "sawtooth" }),
   save: () => tone({ freq: 660, slideTo: 990, duration: 0.18, volume: 0.1, type: "triangle" }),
   respawn: () => tone({ freq: 500, slideTo: 200, duration: 0.22, volume: 0.09 }),
+  /** Swap type A — eerie descending glitch blip */
+  swapA: () => {
+    tone({ freq: 900, slideTo: 180, duration: 0.28, volume: 0.15, type: "sawtooth" });
+    tone({ freq: 440, slideTo: 110, duration: 0.18, volume: 0.1, type: "square", delay: 0.12 });
+  },
+  /** Swap type B — ascending warped chime */
+  swapB: () => {
+    tone({ freq: 200, slideTo: 1100, duration: 0.22, volume: 0.12, type: "square" });
+    tone({ freq: 660, slideTo: 880, duration: 0.18, volume: 0.14, type: "triangle", delay: 0.14 });
+    tone({ freq: 330, slideTo: 660, duration: 0.12, volume: 0.09, type: "square", delay: 0.28 });
+  },
   complete: () => {
     [523, 659, 784, 1046].forEach((f, i) =>
       tone({ freq: f, duration: 0.22, volume: 0.13, type: "square", delay: i * 0.11 }),

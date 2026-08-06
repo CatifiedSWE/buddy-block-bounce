@@ -3,7 +3,9 @@ import { COLORS, PHYSICS, TEX, TILE } from "../utils/constants";
 import { Player, type PlayerKeys } from "../entities/Player";
 import { ColorButton } from "../mechanics/Button";
 import { Door } from "../mechanics/Door";
-import { LEVEL_1, type TileRect } from "../levels/level1";
+import { Bridge, type PlankRect } from "../mechanics/Bridge";
+import { FallingTrap } from "../mechanics/FallingTrap";
+import { DEMO_LEVEL, STAIRS_PLANKS, type TileRect } from "../levels/demoLevel";
 import { sfx } from "../utils/sfx";
 
 const px = (t: number) => t * TILE;
@@ -15,42 +17,37 @@ const toRect = (r: TileRect) => ({
   height: px(r.height),
 });
 
-export class Level1Scene extends Phaser.Scene {
+export class DemoLevelScene extends Phaser.Scene {
   private blue!: Player;
   private red!: Player;
   private players: Player[] = [];
   private solids!: Phaser.Physics.Arcade.StaticGroup;
-  private spikesGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   private buttons: Record<string, ColorButton> = {};
   private doors: Record<string, Door> = {};
+  private bridges: Record<string, Bridge> = {};
+  private trap!: FallingTrap;
 
   private exitZone!: Phaser.Geom.Rectangle;
   private exitTimer = 0;
   private finished = false;
-  private dying = false;
 
   private checkpoints: number[] = [];
   private checkpointIndex = -1;
 
   private triggers: Array<{ x: number; fired: boolean; run: () => void }> = [];
+  private struggleMs = 0;
+  private struggleHintShown = false;
+
   private camZoom = 1;
 
-  // Act 3 Timed Door state
-  private doorCountdownMs = 0;
-  private countdownText?: Phaser.GameObjects.Text;
-  private doorOpenMs = 5000; // Door remains open for 5 seconds
-
   constructor() {
-    super("Level1");
+    super("DemoLevel");
   }
 
   create() {
-    this.dying = false;
-    this.finished = false;
-
-    const worldW = px(LEVEL_1.width);
-    const worldH = px(LEVEL_1.height);
+    const worldW = px(DEMO_LEVEL.width);
+    const worldH = px(DEMO_LEVEL.height);
 
     this.physics.world.setBounds(0, 0, worldW, worldH + 600);
     this.physics.world.gravity.y = PHYSICS.gravityY;
@@ -61,10 +58,7 @@ export class Level1Scene extends Phaser.Scene {
     this.buildBackground(worldW, worldH);
 
     this.solids = this.physics.add.staticGroup();
-    LEVEL_1.solids.forEach((r) => this.addSolid(toRect(r)));
-
-    this.spikesGroup = this.physics.add.staticGroup();
-    this.buildSpikes();
+    DEMO_LEVEL.solids.forEach((r) => this.addSolid(toRect(r)));
 
     this.buildObjects();
     this.buildPlayers();
@@ -74,11 +68,13 @@ export class Level1Scene extends Phaser.Scene {
     this.cameras.main.fadeIn(500, 0, 0, 0);
   }
 
+  // ---------------------------------------------------------------- visuals
   private buildBackground(worldW: number, worldH: number) {
     const bg = this.add.graphics().setDepth(-30).setScrollFactor(0);
     bg.fillGradientStyle(0x141a2b, 0x141a2b, COLORS.bg, COLORS.bg, 1);
     bg.fillRect(0, 0, 2000, 1200);
 
+    // parallax cave silhouettes
     for (let layer = 0; layer < 2; layer++) {
       const g = this.add
         .graphics()
@@ -93,6 +89,7 @@ export class Level1Scene extends Phaser.Scene {
       }
     }
 
+    // floating dust
     this.add.particles(0, 0, "tex-dust", {
       x: { min: 0, max: worldW },
       y: { min: 0, max: worldH },
@@ -101,54 +98,104 @@ export class Level1Scene extends Phaser.Scene {
       speedX: { min: -8, max: 8 },
       scale: { min: 0.6, max: 1.6 },
       alpha: { start: 0.22, end: 0 },
+      quantity: 1,
+      frequency: 160,
     });
   }
 
-  private addSolid(rect: { x: number; y: number; width: number; height: number }) {
-    const tile = this.add
-      .tileSprite(rect.x, rect.y, rect.width, rect.height, TEX.stone)
-      .setOrigin(0, 0);
-    this.solids.add(tile);
+  private addSolid(r: { x: number; y: number; width: number; height: number }) {
+    const ts = this.add
+      .tileSprite(r.x, r.y, r.width, r.height, TEX.stone)
+      .setOrigin(0, 0)
+      .setDepth(2);
+    this.solids.add(ts);
+    (ts.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
+    return ts;
   }
 
-  private buildSpikes() {
-    (LEVEL_1.spikes ?? []).forEach((s) => {
-      const r = toRect(s);
-      for (let x = r.x; x < r.x + r.width; x += TILE) {
-        const spikeSprite = this.add
-          .image(x + TILE / 2, r.y + TILE, TEX.spike)
-          .setOrigin(0.5, 1)
-          .setDepth(6);
-        this.spikesGroup.add(spikeSprite);
-      }
-    });
+  private hiddenPlank(r: { x: number; y: number; width: number; height: number }) {
+    const ts = this.add
+      .tileSprite(r.x, r.y, r.width, r.height, TEX.bridge)
+      .setOrigin(0, 0)
+      .setDepth(6);
+    this.solids.add(ts);
+    (ts.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
+    return ts;
   }
 
+  // --------------------------------------------------------------- entities
   private buildObjects() {
-    const o = LEVEL_1.objects;
+    const o = DEMO_LEVEL.objects;
 
     o.filter((x) => x.type === "button").forEach((def) => {
-      const color = (def.properties?.["color"] as "blue" | "red") ?? "blue";
-      this.buttons[def.name] = new ColorButton(this, px(def.x), px(def.y), color);
+      this.buttons[def.name] = new ColorButton(
+        this,
+        px(def.x),
+        px(def.y),
+        def.properties?.["color"] === "red" ? "red" : "blue",
+      );
     });
 
     o.filter((x) => x.type === "door").forEach((def) => {
-      const kind = (def.properties?.["kind"] as "gate" | "blue" | "red") ?? "gate";
+      const kind = (def.properties?.["kind"] ?? "red") as "red" | "blue" | "gate";
       this.doors[def.name] = new Door(this, px(def.x), px(def.y), kind, this.solids);
     });
 
+    // Section 2 bridge
+    const bridgeDef = o.find((x) => x.name === "bridge-pit")!;
+    const planks: PlankRect[] = [];
+    for (let i = 0; i < (bridgeDef.width ?? 0); i++) {
+      planks.push({ x: px(bridgeDef.x + i), y: px(bridgeDef.y), width: TILE, height: 16 });
+    }
+    this.bridges["bridge-pit"] = new Bridge(this, this.solids, planks);
+
+    // Section 5 rescue stairs
+    this.bridges["stairs"] = new Bridge(this, this.solids, STAIRS_PLANKS.map(toRect));
+
+    // Section 6 — devil bridge (left + right are permanent, middle collapses)
+    ["bridge-devil-left", "bridge-devil-right"].forEach((name) => {
+      const d = o.find((x) => x.name === name)!;
+      for (let i = 0; i < (d.width ?? 0); i++) {
+        this.hiddenPlank({ x: px(d.x + i), y: px(d.y), width: TILE, height: 16 }).setVisible(true);
+      }
+    });
+
+    const trapDef = o.find((x) => x.name === "trap-devil")!;
+    const collapsing: Phaser.GameObjects.TileSprite[] = [];
+    for (let i = 0; i < (trapDef.width ?? 0); i++) {
+      collapsing.push(this.hiddenPlank({ x: px(trapDef.x + i), y: px(trapDef.y), width: TILE, height: 16 }));
+    }
+    const rescueDef = o.find((x) => x.name === "rescue-devil")!;
+    const rescue = this.hiddenPlank({
+      x: px(rescueDef.x),
+      y: px(rescueDef.y),
+      width: px(rescueDef.width ?? 4),
+      height: 16,
+    });
+    this.trap = new FallingTrap(this, collapsing, rescue, () => {
+      this.floatingHint(px(88), px(12.5), "Expect the unexpected.", 0xffd166, 3200);
+    });
+
+    // exit portal
     const exitDef = o.find((x) => x.type === "exit")!;
-    this.add
+    const exitImg = this.add
       .image(px(exitDef.x), px(exitDef.y), TEX.exit)
       .setOrigin(0.5, 1)
-      .setDepth(2);
-
+      .setDepth(1);
     this.exitZone = new Phaser.Geom.Rectangle(
-      px(exitDef.x) - 36,
-      px(exitDef.y) - 128,
-      72,
-      128,
+      exitImg.x - 34,
+      exitImg.y - 120,
+      68,
+      120,
     );
+    this.add
+      .text(exitImg.x, exitImg.y - 140, "EXIT", {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#cfe0ff",
+      })
+      .setOrigin(0.5)
+      .setDepth(12);
 
     this.checkpoints = o.filter((x) => x.type === "checkpoint").map((c) => px(c.x));
   }
@@ -161,8 +208,8 @@ export class Level1Scene extends Phaser.Scene {
     const blueKeys: PlayerKeys = { left: key(K.A), right: key(K.D), jump: key(K.W) };
     const redKeys: PlayerKeys = { left: key(K.LEFT), right: key(K.RIGHT), jump: key(K.UP) };
 
-    const spawnBlue = LEVEL_1.objects.find((o) => o.name === "spawn-blue")!;
-    const spawnRed = LEVEL_1.objects.find((o) => o.name === "spawn-red")!;
+    const spawnBlue = DEMO_LEVEL.objects.find((o) => o.name === "spawn-blue")!;
+    const spawnRed = DEMO_LEVEL.objects.find((o) => o.name === "spawn-red")!;
 
     this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", blueKeys);
     this.red = new Player(this, px(spawnRed.x), px(spawnRed.y) - 20, "red", redKeys);
@@ -170,138 +217,48 @@ export class Level1Scene extends Phaser.Scene {
 
     this.physics.add.collider(this.players, this.solids);
 
-    // Hazard overlap: spikes kill BOTH players and restart at latest checkpoint
-    this.physics.add.overlap(this.players, this.spikesGroup, () => {
-      this.triggerSharedDeath();
-    });
-
     const mid = (this.blue.x + this.red.x) / 2;
     this.cameras.main.centerOn(mid, this.blue.y - 40);
   }
 
-  private triggerSharedDeath() {
-    if (this.dying || this.finished) return;
-    this.dying = true;
-
-    sfx.trap();
-    this.cameras.main.shake(320, 0.015);
-
-    // Spark particles at player positions
-    this.players.forEach((p) => {
-      const sp = this.add.particles(p.x, p.y, TEX.spark, {
-        speed: { min: 40, max: 160 },
-        lifespan: 400,
-        scale: { start: 1.5, end: 0 },
-        alpha: { start: 1, end: 0 },
-        gravityY: 200,
-        emitting: false,
-      });
-      sp.setDepth(30);
-      sp.explode(16);
-      this.time.delayedCall(600, () => sp.destroy());
-    });
-
-    this.time.delayedCall(450, () => {
-      this.respawnBothAtCheckpoint();
-      this.dying = false;
-    });
-  }
-
-  private respawnBothAtCheckpoint() {
-    if (this.checkpointIndex >= 0 && this.checkpointIndex < this.checkpoints.length) {
-      const cx = this.checkpoints[this.checkpointIndex];
-      if (cx !== undefined) {
-        const y = px(20) - 20;
-        this.blue.setSpawn(cx + 24, y);
-        this.red.setSpawn(cx + 72, y);
-      }
-    }
-    this.players.forEach((p) => p.respawn());
-  }
-
   private wireMechanics() {
-    // Act 3 Dual Button Coordination
-    const checkCoopDoor = () => {
-      const upperBtn = this.buttons["btn-upper-blue"];
-      const lowerBtn = this.buttons["btn-lower-red"];
-
-      if (upperBtn?.pressed && lowerBtn?.pressed) {
-        const door = this.doors["coop-gate"];
-        if (door && !door.isOpen) {
-          door.open(500);
-          this.cameras.main.shake(220, 0.01);
-          this.doorCountdownMs = this.doorOpenMs;
-        }
+    // Section 2 — blue-only bridge
+    this.buttons["btn-blue-bridge"]!.onChange = (pressed) => {
+      if (pressed) {
+        this.bridges["bridge-pit"]!.extend();
+        this.cameras.main.shake(140, 0.006);
       }
     };
 
-    if (this.buttons["btn-upper-blue"]) {
-      this.buttons["btn-upper-blue"].onChange = (p) => p && checkCoopDoor();
-    }
-    if (this.buttons["btn-lower-red"]) {
-      this.buttons["btn-lower-red"].onChange = (p) => p && checkCoopDoor();
-    }
+    // Section 3 — red-only door
+    this.buttons["btn-red-door"]!.onChange = (pressed) => {
+      if (pressed) {
+        this.doors["door-red"]!.open(650);
+        this.cameras.main.shake(140, 0.006);
+      }
+    };
+
+    // Section 4 — both, simultaneously
+    const checkGate = () => {
+      const b = this.buttons["btn-gate-blue"]!;
+      const r = this.buttons["btn-gate-red"]!;
+      this.cameras.main.shake(120, 0.005);
+      if (b.pressed && r.pressed) this.doors["gate"]!.open(1800);
+    };
+    this.buttons["btn-gate-blue"]!.onChange = (p) => p && checkGate();
+    this.buttons["btn-gate-red"]!.onChange = (p) => p && checkGate();
+
+    // Section 5 — whoever gets up top drops a staircase for their partner
+    const dropStairs = (pressed: boolean) => {
+      if (!pressed) return;
+      this.bridges["stairs"]!.extend(140);
+      this.cameras.main.shake(160, 0.007);
+    };
+    this.buttons["btn-ledge-blue"]!.onChange = dropStairs;
+    this.buttons["btn-ledge-red"]!.onChange = dropStairs;
   }
 
-  private updateDoorCountdown(delta: number) {
-    const door = this.doors["coop-gate"];
-    if (!door) return;
-
-    if (!this.countdownText) {
-      const dx = door.sprite.x;
-      const dy = door.sprite.y - 235;
-      this.countdownText = this.add
-        .text(dx, dy, "", {
-          fontFamily: "monospace",
-          fontSize: "13px",
-          color: "#e8ecf5",
-          align: "center",
-          backgroundColor: "#0d0f16ee",
-          padding: { x: 10, y: 6 },
-        })
-        .setOrigin(0.5, 1)
-        .setDepth(50);
-    }
-
-    const upperBtn = this.buttons["btn-upper-blue"];
-    const lowerBtn = this.buttons["btn-lower-red"];
-
-    if (door.isOpen) {
-      this.doorCountdownMs -= delta;
-      const sec = Math.max(0, this.doorCountdownMs / 1000);
-
-      let color = "#52e080";
-      if (sec < 1.5) color = "#ff5a55";
-      else if (sec < 3.0) color = "#ffd166";
-
-      this.countdownText
-        .setText(`⏱ DOOR OPEN! CLOSING IN ${sec.toFixed(1)}s`)
-        .setColor(color)
-        .setVisible(true);
-
-      if (this.doorCountdownMs <= 0) {
-        door.close(500);
-      }
-    } else {
-      if (upperBtn?.pressed && !lowerBtn?.pressed) {
-        this.countdownText
-          .setText("⚡ NEED RED SWITCH!")
-          .setColor("#ff5a55")
-          .setVisible(true);
-      } else if (!upperBtn?.pressed && lowerBtn?.pressed) {
-        this.countdownText
-          .setText("⚡ NEED BLUE SWITCH!")
-          .setColor("#4aa3ff")
-          .setVisible(true);
-      } else {
-        this.countdownText
-          .setText("🔒 PRESS BOTH SWITCHES TOGETHER")
-          .setColor("#8ea0bf")
-          .setVisible(true);
-      }
-    }
-  }
-
+  // ------------------------------------------------------------------ hints
   private floatingHint(x: number, y: number, text: string, color = 0xe8ecf5, life = 5200) {
     const label = this.add
       .text(x, y, text, {
@@ -336,38 +293,28 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   private buildHints() {
-    this.floatingHint(px(5), px(16.5), "ACT 1: Respect the spikes!", COLORS.blue, 8000);
+    this.floatingHint(px(2.5), px(16.5), "Blue:  A  D  ·  W to jump", COLORS.blue, 9000);
+    this.floatingHint(px(6.5), px(14.5), "Red:  ←  →  ·  ↑ to jump", COLORS.red, 9000);
 
     this.triggers = [
       {
-        x: px(30),
+        x: px(14),
         fired: false,
         run: () =>
-          this.floatingHint(
-            px(38),
-            px(16),
-            "ACT 2: Synchronize jumps — one mistake resets both!",
-            0xffd166,
-            8000,
-          ),
+          this.floatingHint(px(18), px(17.5), "Only Blue can activate Blue switches.", COLORS.blue),
       },
       {
-        x: px(67),
+        x: px(32),
         fired: false,
         run: () =>
-          this.floatingHint(
-            px(76),
-            px(11),
-            "ACT 3: Press BOTH buttons at the SAME TIME to open the gate!",
-            COLORS.blue,
-            10000,
-          ),
+          this.floatingHint(px(34), px(17.5), "Only Red can activate Red switches.", COLORS.red),
       },
     ];
   }
 
+  // ----------------------------------------------------------------- update
   override update(_time: number, delta: number) {
-    if (this.finished || this.dying) return;
+    if (this.finished) return;
 
     this.resolveStacking();
     this.players.forEach((p) => p.tick(delta));
@@ -375,11 +322,17 @@ export class Level1Scene extends Phaser.Scene {
 
     this.updateCamera(delta);
     this.updateTriggers();
-    this.updateDoorCountdown(delta);
+    this.updateStruggleHint(delta);
+    this.updateTrap();
     this.updateRespawn();
     this.updateExit(delta);
   }
 
+  /**
+   * Manual stack resolution: Arcade can't reliably keep one dynamic body on
+   * top of another, so we snap the upper player onto their partner's head and
+   * let them ride along.
+   */
   private resolveStacking() {
     this.blue.standingOnPartner = false;
     this.red.standingOnPartner = false;
@@ -439,32 +392,46 @@ export class Level1Scene extends Phaser.Scene {
       }
     });
 
+    // checkpoints advance when BOTH players are past them
     const trail = Math.min(this.blue.x, this.red.x);
     this.checkpoints.forEach((cx, i) => {
       if (i > this.checkpointIndex && trail > cx) {
         this.checkpointIndex = i;
-        const y = px(20) - 20;
+        const y = i >= 3 ? px(15) - 20 : px(20) - 20;
         this.blue.setSpawn(cx + 24, y);
         this.red.setSpawn(cx + 72, y);
       }
     });
   }
 
-  private updateRespawn() {
-    const floor = px(LEVEL_1.height) + 120;
-    const outOfBounds = this.players.some((p) => p.y > floor);
-    if (outOfBounds) {
-      this.triggerSharedDeath();
+  private updateStruggleHint(delta: number) {
+    if (this.struggleHintShown) return;
+    const nearWall = this.players.every((p) => p.x > px(66) && p.x < px(73) && p.y > px(17));
+    if (nearWall) this.struggleMs += delta;
+    else this.struggleMs = Math.max(0, this.struggleMs - delta * 0.5);
+
+    if (this.struggleMs > 6000) {
+      this.struggleHintShown = true;
+      this.floatingHint(px(69), px(17), "Try standing on each other.", 0xffd166, 7000);
     }
   }
 
-  private updateExit(delta: number) {
-    const door = this.doors["coop-gate"];
-    if (!door || !door.isOpen) {
-      this.exitTimer = 0;
-      return;
-    }
+  private updateTrap() {
+    if (this.trap.triggered) return;
+    const onBridge = this.players.every(
+      (p) => p.x > px(83.5) && p.x < px(90.5) && p.y < px(16.5) && p.y > px(12),
+    );
+    if (onBridge) this.trap.trigger();
+  }
 
+  private updateRespawn() {
+    const floor = px(DEMO_LEVEL.height) + 120;
+    this.players.forEach((p) => {
+      if (p.y > floor) p.respawn();
+    });
+  }
+
+  private updateExit(delta: number) {
     const bothIn = this.players.every((p) =>
       Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.exitZone),
     );
@@ -486,7 +453,7 @@ export class Level1Scene extends Phaser.Scene {
       cam.setBackgroundColor(0x000000);
 
       const title = this.add
-        .text(cx, cy - 20, "LEVEL 1 COMPLETE", {
+        .text(cx, cy - 20, "DEMO LEVEL COMPLETE", {
           fontFamily: "monospace",
           fontSize: "34px",
           color: "#e8ecf5",
@@ -497,7 +464,7 @@ export class Level1Scene extends Phaser.Scene {
         .setAlpha(0);
 
       const sub = this.add
-        .text(cx, cy + 30, "Next: Level 2 — The Troll...", {
+        .text(cx, cy + 30, "Next: Level 1 — Cooperation...", {
           fontFamily: "monospace",
           fontSize: "16px",
           color: "#8ea0bf",
@@ -511,8 +478,8 @@ export class Level1Scene extends Phaser.Scene {
       this.tweens.add({ targets: title, alpha: 1, duration: 700, delay: 200 });
       this.tweens.add({ targets: sub, alpha: 1, duration: 700, delay: 1200 });
 
-      this.time.delayedCall(2500, () => {
-        this.scene.start("Level2");
+      this.time.delayedCall(2400, () => {
+        this.scene.start("Level1");
       });
     });
   }
