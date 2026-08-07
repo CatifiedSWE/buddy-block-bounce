@@ -46,6 +46,18 @@ export class DemoLevelScene extends Phaser.Scene {
   }
 
   create() {
+    this.finished = false;
+    this.exitTimer = 0;
+    this.checkpointIndex = -1;
+    this.struggleMs = 0;
+    this.struggleHintShown = false;
+    this.camZoom = 1;
+    this.buttons = {};
+    this.doors = {};
+    this.bridges = {};
+    this.triggers = [];
+    this.checkpoints = [];
+
     const worldW = px(DEMO_LEVEL.width);
     const worldH = px(DEMO_LEVEL.height);
 
@@ -446,7 +458,6 @@ export class DemoLevelScene extends Phaser.Scene {
     this.players.forEach((p) => p.body_.setVelocity(0, 0));
 
     const cam = this.cameras.main;
-    cam.fadeOut(900, 0, 0, 0);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       const cx = cam.width / 2;
       const cy = cam.height / 2;
@@ -478,9 +489,11 @@ export class DemoLevelScene extends Phaser.Scene {
       this.tweens.add({ targets: title, alpha: 1, duration: 700, delay: 200 });
       this.tweens.add({ targets: sub, alpha: 1, duration: 700, delay: 1200 });
 
+      this.game.events.emit("level-change", "Level1");
       this.time.delayedCall(2400, () => {
         this.scene.start("Level1");
       });
     });
+    cam.fadeOut(900, 0, 0, 0);
   }
 }

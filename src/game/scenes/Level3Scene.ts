@@ -45,12 +45,24 @@ export class Level3Scene extends Phaser.Scene {
   private postMazeTriggered = false;
   private evilShown = false;
 
+  // Periodic swap state
+  private swapTimer = 0;
+  private nextSwapMs = 8000;
+  private currentMode = 0;
+  private modeBanner?: Phaser.GameObjects.Container | undefined;
+
   // UI elements
   private controlsContainer!: Phaser.GameObjects.Container;
   private twistText!: Phaser.GameObjects.Text;
 
   constructor() {
     super("Level3");
+  }
+
+  preload() {
+    if (!this.cache.audio.exists("ysnp")) {
+      this.load.audio("ysnp", "/you-shall-not-pass.mp3");
+    }
   }
 
   create() {
@@ -62,6 +74,10 @@ export class Level3Scene extends Phaser.Scene {
     this.postMazeTriggered = false;
     this.evilShown = false;
     this.camZoom = 1;
+    this.swapTimer = 0;
+    this.nextSwapMs = Phaser.Math.Between(8000, 10000);
+    this.currentMode = 0;
+    this.modeBanner = undefined;
 
     const worldW = px(LEVEL_3.width);
     const worldH = px(LEVEL_3.height);
@@ -386,36 +402,104 @@ export class Level3Scene extends Phaser.Scene {
     this.introActive = false;
   }
 
-  // ─── Control Swap ─────────────────────────────────────────────────────────────
+  // ─── Control Swap (3 Modes: Invert, Split/Cross Jump, Role Swap) ───────────────
 
-  private applyRandomSwap() {
-    const modes = [1, 2, 3, 4];
-    const mode = modes[Math.floor(Math.random() * modes.length)];
+  private triggerNextSwap() {
+    const modes = [1, 2, 3].filter((m) => m !== this.currentMode);
+    const newMode = modes[Math.floor(Math.random() * modes.length)] ?? 1;
+    this.currentMode = newMode;
 
     const origBlue = this.blueKeysOriginal;
-    const origRed  = this.redKeysOriginal;
+    const origRed = this.redKeysOriginal;
 
-    if (mode === 1) {
-      // Invert horizontal for both players
-      sfx.swapA();
+    let bannerText = "";
+    let colorHex = "#ffffff";
+    let bgHex = 0x000000;
+
+    if (newMode === 1) {
+      // Mode 1: INVERSION (Left means Right, Right means Left for both)
+      sfx.mode1Invert();
       this.blue.setKeys({ left: origBlue.right, right: origBlue.left, jump: origBlue.jump });
       this.red.setKeys({ left: origRed.right, right: origRed.left, jump: origRed.jump });
-    } else if (mode === 2) {
-      // Swap players (Blue uses Arrow keys, Red uses WASD)
-      sfx.swapB();
+      bannerText = "⚡ MODE 1: INVERTED CONTROLS! (Left ↔ Right)";
+      colorHex = "#ff9933";
+      bgHex = 0x331a00;
+    } else if (newMode === 2) {
+      // Mode 2: CROSS / SPLIT JUMP CONTROL (Red jumps Blue / Blue jumps Red)
+      sfx.mode2Split();
+      this.blue.setKeys({ left: origBlue.left, right: origBlue.right, jump: origRed.jump });
+      this.red.setKeys({ left: origRed.left, right: origRed.right, jump: origBlue.jump });
+      bannerText = "🔀 MODE 2: SPLIT CONTROL! (Red Jumps Blue / Blue Jumps Red)";
+      colorHex = "#cc66ff";
+      bgHex = 0x260033;
+    } else {
+      // Mode 3: PLAYER ROLE SWAP (Blue = Arrows, Red = WASD)
+      sfx.mode3RoleSwap();
       this.blue.setKeys({ left: origRed.left, right: origRed.right, jump: origRed.jump });
       this.red.setKeys({ left: origBlue.left, right: origBlue.right, jump: origBlue.jump });
-    } else if (mode === 3) {
-      // Inverted horizontal + Swapped players
-      sfx.swapA();
-      this.blue.setKeys({ left: origRed.right, right: origRed.left, jump: origRed.jump });
-      this.red.setKeys({ left: origBlue.right, right: origBlue.left, jump: origBlue.jump });
-    } else {
-      // Swapped players with mixed vertical/horizontal inversion
-      sfx.swapB();
-      this.blue.setKeys({ left: origRed.right, right: origRed.left, jump: origBlue.jump });
-      this.red.setKeys({ left: origBlue.left, right: origBlue.right, jump: origRed.jump });
+      bannerText = "🔀 MODE 3: PLAYER ROLE SWAP! (Blue = Arrows, Red = WASD)";
+      colorHex = "#4aa3ff";
+      bgHex = 0x001a33;
     }
+
+    this.cameras.main.shake(140, 0.008);
+    this.showModeBanner(bannerText, colorHex, bgHex);
+  }
+
+  private showModeBanner(text: string, colorHex: string, bgHex: number) {
+    if (this.modeBanner) {
+      this.modeBanner.destroy();
+      this.modeBanner = undefined;
+    }
+
+    const cam = this.cameras.main;
+    const W = cam.width;
+
+    const colorNum = Phaser.Display.Color.HexStringToColor(colorHex).color;
+    const bg = this.add
+      .rectangle(0, 0, 520, 36, bgHex, 0.9)
+      .setStrokeStyle(2, colorNum);
+
+    const txt = this.add
+      .text(0, 0, text, {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: colorHex,
+        align: "center",
+      })
+      .setOrigin(0.5);
+
+    const container = this.add
+      .container(W / 2, 40, [bg, txt])
+      .setScrollFactor(0)
+      .setDepth(150)
+      .setAlpha(0)
+      .setScale(0.85);
+
+    this.modeBanner = container;
+
+    this.tweens.add({
+      targets: container,
+      alpha: 1,
+      scale: 1,
+      duration: 300,
+      ease: "Back.easeOut",
+    });
+
+    this.time.delayedCall(4500, () => {
+      if (this.modeBanner === container) {
+        this.tweens.add({
+          targets: container,
+          alpha: 0,
+          scale: 0.85,
+          duration: 350,
+          onComplete: () => {
+            container.destroy();
+            if (this.modeBanner === container) this.modeBanner = undefined;
+          },
+        });
+      }
+    });
   }
 
   // ─── Death & Restart ──────────────────────────────────────────────────────────
@@ -476,62 +560,222 @@ export class Level3Scene extends Phaser.Scene {
     const W = cam.width;
     const H = cam.height;
 
-    sfx.trap();
-    cam.shake(600, 0.02);
+    // 1. Play Audio (Phaser Sound + HTML5 Audio fallback for instant playback)
+    try {
+      if (this.sound.get("ysnp")) {
+        this.sound.play("ysnp", { volume: 1.0 });
+      } else {
+        const audio = new Audio("/you-shall-not-pass.mp3");
+        void audio.play();
+      }
+    } catch {
+      const audio = new Audio("/you-shall-not-pass.mp3");
+      void audio.play();
+    }
 
-    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+    sfx.trap();
+    cam.shake(500, 0.015);
+
+    // Dark vignette background overlay
+    const overlay = this.add
+      .rectangle(W / 2, H / 2, W, H, 0x000000, 0)
       .setScrollFactor(0)
       .setDepth(199);
 
     this.tweens.add({
       targets: overlay,
-      alpha: 0.8,
-      duration: 600,
+      alpha: 0.85,
+      duration: 800,
       ease: "Sine.easeIn",
     });
 
-    const evil = this.add.graphics().setScrollFactor(0).setDepth(200);
-    this.drawEvilCharacter(evil, W / 2, H / 2 - 40);
-
-    const evilText = this.add.text(W / 2, H / 2 + 55, "YOU SHALL NOT PASS", {
-      fontFamily: "monospace",
-      fontSize: "32px",
-      color: "#ff2222",
-      align: "center",
-      shadow: {
-        offsetX: 0,
-        offsetY: 0,
-        color: "#ff4444",
-        blur: 16,
-        fill: true,
-      },
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(201).setAlpha(0);
+    // Red aura glow behind character
+    const redGlow = this.add
+      .circle(W / 2, H / 2 - 40, 160, 0xff0000, 0)
+      .setScrollFactor(0)
+      .setDepth(199);
 
     this.tweens.add({
-      targets: evilText,
-      alpha: 1,
-      scaleX: { from: 1.4, to: 1 },
-      scaleY: { from: 1.4, to: 1 },
-      duration: 500,
-      delay: 400,
-      ease: "Sine.easeOut",
-    });
-
-    // Pulsing text effect
-    this.tweens.add({
-      targets: evilText,
-      alpha: { from: 1, to: 0.7 },
-      duration: 600,
+      targets: redGlow,
+      alpha: 0.35,
+      scale: 1.3,
+      duration: 1500,
       yoyo: true,
       repeat: -1,
-      delay: 1000,
+      ease: "Sine.easeInOut",
     });
 
-    // Show for 5 seconds, then fade to full black and roll credits
-    this.time.delayedCall(5000, () => {
+    // Fiery particle embers floating upwards
+    const embers = this.add
+      .particles(W / 2, H / 2 + 100, TEX.spark, {
+        x: { min: -180, max: 180 },
+        speedY: { min: -140, max: -40 },
+        speedX: { min: -30, max: 30 },
+        scale: { start: 2.0, end: 0 },
+        alpha: { start: 1, end: 0 },
+        lifespan: { min: 800, max: 1800 },
+        frequency: 60,
+      })
+      .setScrollFactor(0)
+      .setDepth(200);
+
+    // 0s - 4s: Character entrance & Dynamic text reveal
+    const evilContainer = this.add
+      .container(W / 2, H / 2 - 40)
+      .setScrollFactor(0)
+      .setDepth(201)
+      .setAlpha(0)
+      .setScale(0.5);
+
+    const evilG = this.add.graphics();
+    this.drawEvilCharacter(evilG, 0, 0);
+    evilContainer.add(evilG);
+
+    // Character entrance animation (0s - 1.5s)
+    this.tweens.add({
+      targets: evilContainer,
+      alpha: 1,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 1200,
+      ease: "Back.easeOut",
+    });
+
+    // Text Reveal (1.0s - 3.5s): Letter-by-letter typing with red glow
+    const fullText = "YOU SHALL NOT PASS";
+    const evilText = this.add
+      .text(W / 2, H / 2 + 65, "", {
+        fontFamily: "monospace",
+        fontSize: "36px",
+        color: "#ff2222",
+        align: "center",
+        stroke: "#550000",
+        strokeThickness: 4,
+        shadow: {
+          offsetX: 0,
+          offsetY: 0,
+          color: "#ff0000",
+          blur: 24,
+          fill: true,
+        },
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(205)
+      .setAlpha(0);
+
+    let charIdx = 0;
+    this.time.delayedCall(1000, () => {
+      evilText.setAlpha(1);
+      this.time.addEvent({
+        delay: 95,
+        repeat: fullText.length - 1,
+        callback: () => {
+          charIdx++;
+          evilText.setText(fullText.substring(0, charIdx));
+          sfx.land();
+          cam.shake(80, 0.005);
+        },
+      });
+    });
+
+    // 4s - 7s: EVERYTHING BREAKS, BLACK & WHITE MONOCHROME SHATTER, EARTHQUAKE SHAKE
+    this.time.delayedCall(4000, () => {
+      // Violent earthquake shake
+      cam.shake(2800, 0.04);
+      sfx.trap();
+
+      // Shockwave ring expanding from character
+      const shockwave = this.add
+        .circle(W / 2, H / 2 - 40, 20, 0xffffff, 0.9)
+        .setScrollFactor(0)
+        .setDepth(210);
+
+      this.tweens.add({
+        targets: shockwave,
+        radius: 600,
+        alpha: 0,
+        duration: 800,
+        ease: "Quad.easeOut",
+        onComplete: () => shockwave.destroy(),
+      });
+
+      // World breaking: Debris blocks flying apart
+      for (let i = 0; i < 35; i++) {
+        const debrisX = Phaser.Math.Between(40, W - 40);
+        const debrisY = Phaser.Math.Between(40, H - 40);
+        const chunk = this.add
+          .rectangle(
+            debrisX,
+            debrisY,
+            Phaser.Math.Between(14, 34),
+            Phaser.Math.Between(14, 34),
+            0x444444,
+          )
+          .setScrollFactor(0)
+          .setDepth(208);
+
+        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+        const speed = Phaser.Math.Between(220, 650);
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed - 150;
+
+        this.tweens.add({
+          targets: chunk,
+          x: debrisX + vx,
+          y: debrisY + vy,
+          rotation: Phaser.Math.FloatBetween(-4, 4),
+          alpha: 0,
+          duration: 2200,
+          ease: "Power2.easeOut",
+          onComplete: () => chunk.destroy(),
+        });
+      }
+
+      // Black & White (Monochrome Desaturation Overlay + Flash Glitch)
+      const monochromeGlitch = this.add
+        .rectangle(W / 2, H / 2, W, H, 0xffffff, 0)
+        .setScrollFactor(0)
+        .setDepth(220)
+        .setBlendMode(Phaser.BlendModes.DIFFERENCE);
+
+      this.tweens.add({
+        targets: monochromeGlitch,
+        alpha: { from: 0.9, to: 0.15 },
+        duration: 75,
+        yoyo: true,
+        repeat: 20,
+      });
+
+      // Monochrome background tint cover
+      this.add
+        .rectangle(W / 2, H / 2, W, H, 0x111111, 0.78)
+        .setScrollFactor(0)
+        .setDepth(198);
+
+      // Text trembling aggressively
+      this.tweens.add({
+        targets: evilText,
+        scaleX: 1.35,
+        scaleY: 1.35,
+        duration: 90,
+        yoyo: true,
+        repeat: -1,
+      });
+    });
+
+    // 6.9s: SUDDEN CUT TO BLACK -> Credits
+    this.time.delayedCall(6900, () => {
       this.finished = true;
-      cam.fadeOut(1500, 0, 0, 0);
-      cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      embers.destroy();
+
+      // Sharp sudden cut to pitch black mask
+      this.add
+        .rectangle(W / 2, H / 2, W + 200, H + 200, 0x000000, 1)
+        .setScrollFactor(0)
+        .setDepth(99999);
+
+      this.time.delayedCall(300, () => {
         this.scene.start("Credits");
       });
     });
@@ -627,12 +871,12 @@ export class Level3Scene extends Phaser.Scene {
   private updateTriggers() {
     if (this.postMazeTriggered) return;
 
-    // Trigger control swap when stepping into the maze (past x = 10 tiles)
+    // Trigger initial control swap when stepping into the maze (past x = 10 tiles)
     if (!this.swapTriggered) {
       const inMaze = this.players.some((p) => p.x > px(10));
       if (inMaze) {
         this.swapTriggered = true;
-        this.applyRandomSwap();
+        this.triggerNextSwap();
       }
     }
 
@@ -657,6 +901,16 @@ export class Level3Scene extends Phaser.Scene {
     }
 
     if (this.dying) return;
+
+    // Periodic control swap every 8-10 seconds while inside the maze
+    if (this.swapTriggered && !this.postMazeTriggered) {
+      this.swapTimer += delta;
+      if (this.swapTimer >= this.nextSwapMs) {
+        this.swapTimer = 0;
+        this.nextSwapMs = Phaser.Math.Between(8000, 10000);
+        this.triggerNextSwap();
+      }
+    }
 
     this.resolveStacking();
     this.players.forEach((p) => p.tick(delta));

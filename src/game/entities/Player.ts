@@ -58,7 +58,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   respawn() {
     this.setPosition(this.spawnX, this.spawnY);
+    this.body_.reset(this.spawnX, this.spawnY);
     this.body_.setVelocity(0, 0);
+    this.body_.setAcceleration(0, 0);
+    this.coyote = 0;
+    this.buffer = 0;
+    this.wasOnFloor = true;
+    this.standingOnPartner = false;
     this.setAlpha(0);
     this.scene.tweens.add({ targets: this, alpha: 1, duration: 220 });
     sfx.respawn();

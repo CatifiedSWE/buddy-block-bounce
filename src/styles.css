@@ -108,7 +108,12 @@
   }
 
   body {
-    background-color: var(--color-background);
+    background-color: #050814;
+    background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('/background-image-game.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
     color: var(--color-foreground);
   }
 }

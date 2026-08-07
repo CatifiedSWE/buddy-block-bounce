@@ -25,8 +25,8 @@ function Index() {
   const [startedLevel, setStartedLevel] = useState<string | null>(null);
 
   return (
-    <main className="min-h-screen bg-background px-4 py-10">
-      <div className="mx-auto w-full max-w-5xl">
+    <main className="flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:py-12">
+      <div className="mx-auto w-full max-w-3xl md:max-w-4xl">
         {startedLevel ? (
           <GameCanvas initialLevel={startedLevel} />
         ) : (

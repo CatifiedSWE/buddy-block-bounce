@@ -38,7 +38,7 @@ export class Level1Scene extends Phaser.Scene {
 
   // Act 3 Timed Door state
   private doorCountdownMs = 0;
-  private countdownText?: Phaser.GameObjects.Text;
+  private countdownText?: Phaser.GameObjects.Text | undefined;
   private doorOpenMs = 5000; // Door remains open for 5 seconds
 
   constructor() {
@@ -48,6 +48,15 @@ export class Level1Scene extends Phaser.Scene {
   create() {
     this.dying = false;
     this.finished = false;
+    this.checkpointIndex = -1;
+    this.exitTimer = 0;
+    this.doorCountdownMs = 0;
+    this.countdownText = undefined;
+    this.camZoom = 1;
+    this.buttons = {};
+    this.doors = {};
+    this.triggers = [];
+    this.checkpoints = [];
 
     const worldW = px(LEVEL_1.width);
     const worldH = px(LEVEL_1.height);
@@ -201,22 +210,13 @@ export class Level1Scene extends Phaser.Scene {
       this.time.delayedCall(600, () => sp.destroy());
     });
 
-    this.time.delayedCall(450, () => {
-      this.respawnBothAtCheckpoint();
-      this.dying = false;
+    // Restart level from beginning
+    this.time.delayedCall(500, () => {
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+        this.scene.restart();
+      });
+      this.cameras.main.fadeOut(400, 0, 0, 0);
     });
-  }
-
-  private respawnBothAtCheckpoint() {
-    if (this.checkpointIndex >= 0 && this.checkpointIndex < this.checkpoints.length) {
-      const cx = this.checkpoints[this.checkpointIndex];
-      if (cx !== undefined) {
-        const y = px(20) - 20;
-        this.blue.setSpawn(cx + 24, y);
-        this.red.setSpawn(cx + 72, y);
-      }
-    }
-    this.players.forEach((p) => p.respawn());
   }
 
   private wireMechanics() {
@@ -479,7 +479,6 @@ export class Level1Scene extends Phaser.Scene {
     this.players.forEach((p) => p.body_.setVelocity(0, 0));
 
     const cam = this.cameras.main;
-    cam.fadeOut(900, 0, 0, 0);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       const cx = cam.width / 2;
       const cy = cam.height / 2;
@@ -511,9 +510,11 @@ export class Level1Scene extends Phaser.Scene {
       this.tweens.add({ targets: title, alpha: 1, duration: 700, delay: 200 });
       this.tweens.add({ targets: sub, alpha: 1, duration: 700, delay: 1200 });
 
+      this.game.events.emit("level-change", "Level2");
       this.time.delayedCall(2500, () => {
         this.scene.start("Level2");
       });
     });
+    cam.fadeOut(900, 0, 0, 0);
   }
 }

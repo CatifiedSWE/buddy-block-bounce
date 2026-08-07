@@ -70,6 +70,7 @@ export class Level2Scene extends Phaser.Scene {
     this.finished = false;
     this.isFrozen = false;
     this.fakeExitTriggered = false;
+    this.floorTrapTriggered = false;
     this.spikeChaseActive = false;
     this.fastRightSpikesActive = false;
     this.harmlessRightTriggered = false;
@@ -389,7 +390,7 @@ export class Level2Scene extends Phaser.Scene {
 
   private triggerSpikeChase() {
     if (this.spikeChaseActive || this.isFrozen) return;
-    this.isFrozen = true; // Hold player movement for 2.5s total
+    this.isFrozen = true; // Hold player movement during reveal animation
 
     // Freeze player movement
     this.players.forEach((p) => {
@@ -398,17 +399,16 @@ export class Level2Scene extends Phaser.Scene {
     });
 
     sfx.trap();
-    this.cameras.main.shake(400, 0.018);
-
-    // Dramatic camera zoom out
-    this.camZoom = 0.65;
-    this.cameras.main.setZoom(0.65);
+    this.cameras.main.shake(300, 0.015);
 
     const trailX = Math.min(this.blue.x, this.red.x);
+    const playerMidX = (this.blue.x + this.red.x) / 2;
+    const midY = (this.blue.y + this.red.y) / 2 - 40;
+
     this.chaserX = trailX - 300;
     this.chaserHitbox.setPosition(this.chaserX, 0);
 
-    // Make spike wall VISIBLE IMMEDIATELY at t=0s when freeze happens
+    // Make spike wall VISIBLE IMMEDIATELY at t=0s
     let colIdx = 0;
     let rowIdx = 0;
     const worldH = px(LEVEL_2.height);
@@ -422,21 +422,29 @@ export class Level2Scene extends Phaser.Scene {
       sp.setAlpha(1);
     });
 
-    this.floatingHint(
-      trailX + 80,
-      px(14),
-      "⚠ SPIKE WALL INCOMING! RUN! 🏃‍♂️💨",
-      0xff5a55,
-      4500,
-    );
+    // 1. Pan camera LEFT to reveal spike wall behind players (no zoom out)
+    const spikeRevealX = this.chaserX + 160;
+    this.cameras.main.pan(spikeRevealX, midY, 700, "Sine.easeInOut");
 
-    // At 2.0s (0.5s before player unfreeze at 2.5s), start spike wall movement!
-    this.time.delayedCall(2000, () => {
+    // 2. At 800ms, display warning hint and pan camera back RIGHT to players
+    this.time.delayedCall(800, () => {
+      this.floatingHint(
+        trailX + 80,
+        px(14),
+        "⚠ SPIKE WALL INCOMING! RUN! 🏃‍♂️💨",
+        0xff5a55,
+        4000,
+      );
+      this.cameras.main.pan(playerMidX, midY, 900, "Sine.easeInOut");
+    });
+
+    // 3. At 1800ms, start spike wall movement!
+    this.time.delayedCall(1800, () => {
       this.spikeChaseActive = true;
     });
 
-    // At 2.5s, restore player control!
-    this.time.delayedCall(2500, () => {
+    // 4. At 2100ms, unfreeze players so they can run!
+    this.time.delayedCall(2100, () => {
       this.isFrozen = false;
     });
   }
@@ -545,12 +553,6 @@ export class Level2Scene extends Phaser.Scene {
       this.pitWarningContainer = null;
     }
 
-    // Re-arm triggers beyond current checkpoint
-    const currentCPX = this.checkpoints[Math.max(0, this.checkpointIndex)] ?? 0;
-    this.triggers.forEach((t) => {
-      if (t.x > currentCPX) t.fired = false;
-    });
-
     this.players.forEach((p) => {
       const sp = this.add.particles(p.x, p.y, TEX.spark, {
         speed: { min: 40, max: 160 },
@@ -565,22 +567,13 @@ export class Level2Scene extends Phaser.Scene {
       this.time.delayedCall(600, () => sp.destroy());
     });
 
-    this.time.delayedCall(450, () => {
-      this.respawnBothAtCheckpoint();
-      this.dying = false;
+    // Restart level from beginning
+    this.time.delayedCall(500, () => {
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+        this.scene.restart();
+      });
+      this.cameras.main.fadeOut(400, 0, 0, 0);
     });
-  }
-
-  private respawnBothAtCheckpoint() {
-    if (this.checkpointIndex >= 0 && this.checkpointIndex < this.checkpoints.length) {
-      const cx = this.checkpoints[this.checkpointIndex];
-      if (cx !== undefined) {
-        const y = px(20) - 20;
-        this.blue.setSpawn(cx + 24, y);
-        this.red.setSpawn(cx + 72, y);
-      }
-    }
-    this.players.forEach((p) => p.respawn());
   }
 
   // ─── Floating hint ───────────────────────────────────────────────────────────
@@ -834,7 +827,6 @@ export class Level2Scene extends Phaser.Scene {
     this.players.forEach((p) => p.body_.setVelocity(0, 0));
 
     const cam = this.cameras.main;
-    cam.fadeOut(900, 0, 0, 0);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       const cx = cam.width / 2;
       const cy = cam.height / 2;
@@ -878,9 +870,11 @@ export class Level2Scene extends Phaser.Scene {
       this.tweens.add({ targets: levelSub, alpha: 1, duration: 600, delay: 800 });
       this.tweens.add({ targets: tagline, alpha: 1, duration: 600, delay: 1400 });
 
+      this.game.events.emit("level-change", "Level3");
       this.time.delayedCall(2800, () => {
         this.scene.start("Level3");
       });
     });
+    cam.fadeOut(900, 0, 0, 0);
   }
 }
