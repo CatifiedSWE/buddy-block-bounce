@@ -1,9 +1,61 @@
 import * as Phaser from "phaser";
 import { COLORS, PHYSICS, TEX, TILE } from "../utils/constants";
-import { Player, type PlayerKeys } from "../entities/Player";
+import { Player } from "../entities/Player";
 import { LEVEL_3 } from "../levels/level3";
 import type { TileRect } from "../levels/level1";
 import { sfx } from "../utils/sfx";
+import type { InputSource } from "../input/InputSource";
+import { KeyboardInput } from "../input/KeyboardInput";
+import { GamepadInput } from "../input/GamepadInput";
+import { CombinedInput } from "../input/CombinedInput";
+
+/**
+ * InvertedInput — modifier that swaps left ↔ right on the wrapped source.
+ *
+ * This is a local Level3 concern only. It accepts any InputSource so it can
+ * wrap a KeyboardInput, a GamepadInput, a CombinedInput, or another modifier.
+ * Player.ts is never aware that controls have been inverted.
+ */
+class InvertedInput implements InputSource {
+  constructor(private readonly src: InputSource) {}
+  left(): boolean  { return this.src.right(); }
+  right(): boolean { return this.src.left(); }
+  jump(): boolean  { return this.src.jump(); }
+  jumpPressed(): boolean { return this.src.jumpPressed(); }
+}
+
+/**
+ * JumpOnlyInput — modifier that passes jump through but silences left/right.
+ *
+ * Used by Mode 2 (Split Control): each player moves with their own controls,
+ * but only the partner's JUMP signal crosses over. Without this, adding the
+ * full partner source via CombinedInput would bleed their movement keys too
+ * (e.g. Blue presses left → Red also goes left because CombinedInput ORs all
+ * actions). JumpOnlyInput prevents that cross-contamination.
+ */
+class JumpOnlyInput implements InputSource {
+  constructor(private readonly src: InputSource) {}
+  left(): boolean  { return false; }
+  right(): boolean { return false; }
+  jump(): boolean  { return this.src.jump(); }
+  jumpPressed(): boolean { return this.src.jumpPressed(); }
+}
+
+/**
+ * MoveOnlyInput — modifier that passes left/right through but silences jump.
+ *
+ * Used alongside JumpOnlyInput in Mode 2: the player keeps their own movement
+ * controls but their OWN jump is stripped out, replaced exclusively by the
+ * partner's jump via JumpOnlyInput. Without this, the player could still jump
+ * with their own key in addition to the partner's key.
+ */
+class MoveOnlyInput implements InputSource {
+  constructor(private readonly src: InputSource) {}
+  left(): boolean  { return this.src.left(); }
+  right(): boolean { return this.src.right(); }
+  jump(): boolean  { return false; }
+  jumpPressed(): boolean { return false; }
+}
 
 const px = (t: number) => t * TILE;
 
@@ -24,10 +76,16 @@ export class Level3Scene extends Phaser.Scene {
   private exitDoorGraphic!: Phaser.GameObjects.Image;
   private postMazeZoneX = px(50); // x coordinate entering post-maze empty room
 
-  private blueKeysOriginal!: PlayerKeys;
-  private redKeysOriginal!: PlayerKeys;
-  private blueKeysLive!: PlayerKeys;
-  private redKeysLive!: PlayerKeys;
+  // Original per-player input sources — the "canonical" inputs, never mutated.
+  // blueInputOriginal = keyboard WASD + Controller 1
+  // redInputOriginal  = keyboard Arrows + Controller 2
+  private blueInputOriginal!: CombinedInput;
+  private redInputOriginal!: CombinedInput;
+
+  // The CombinedInput instances that are actually wired to each Player.
+  // triggerNextSwap calls setSources() on these to hot-swap compositions.
+  private blueCombined!: CombinedInput;
+  private redCombined!: CombinedInput;
 
   private finished = false;
   private dying = false;
@@ -171,17 +229,31 @@ export class Level3Scene extends Phaser.Scene {
     const key = (code: number) => kb.addKey(code, true, false);
     const K = Phaser.Input.Keyboard.KeyCodes;
 
-    this.blueKeysOriginal = { left: key(K.A), right: key(K.D), jump: key(K.W) };
-    this.redKeysOriginal  = { left: key(K.LEFT), right: key(K.RIGHT), jump: key(K.UP) };
+    // ── Physical device sources ───────────────────────────────────────────────
+    // These are the raw per-player inputs (keyboard + gamepad). They are stored
+    // so triggerNextSwap can compose them into swap modes without ever knowing
+    // about specific keys or buttons.
+    const blueKb  = new KeyboardInput(key(K.A), key(K.D), key(K.W));
+    const redKb   = new KeyboardInput(key(K.LEFT), key(K.RIGHT), key(K.UP));
+    const bluePad = new GamepadInput(0);
+    const redPad  = new GamepadInput(1);
 
-    this.blueKeysLive = { ...this.blueKeysOriginal };
-    this.redKeysLive  = { ...this.redKeysOriginal };
+    // ── Canonical player inputs (keyboard + their assigned controller) ────────
+    // These represent the concept of "Blue's inputs" and "Red's inputs"
+    // regardless of what mode is active. Swap modes compose from these.
+    this.blueInputOriginal = new CombinedInput(blueKb, bluePad);
+    this.redInputOriginal  = new CombinedInput(redKb,  redPad);
+
+    // ── Live combined inputs — these are what the Players actually read ───────
+    // triggerNextSwap calls setSources() on these to swap compositions.
+    this.blueCombined = new CombinedInput(blueKb, bluePad);
+    this.redCombined  = new CombinedInput(redKb,  redPad);
 
     const spawnBlue = LEVEL_3.objects.find((o) => o.name === "spawn-blue")!;
     const spawnRed  = LEVEL_3.objects.find((o) => o.name === "spawn-red")!;
 
-    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", this.blueKeysLive);
-    this.red  = new Player(this, px(spawnRed.x),  px(spawnRed.y)  - 20, "red",  this.redKeysLive);
+    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", this.blueCombined);
+    this.red  = new Player(this, px(spawnRed.x),  px(spawnRed.y)  - 20, "red",  this.redCombined);
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);
@@ -403,41 +475,57 @@ export class Level3Scene extends Phaser.Scene {
   }
 
   // ─── Control Swap (3 Modes: Invert, Split/Cross Jump, Role Swap) ───────────────
+  //
+  // Swap modes are now expressed as InputSource compositions rather than raw
+  // key references. Each mode calls setSources() on blueCombined/redCombined
+  // to rewire what inputs each player sees. Player.ts is never involved.
 
   private triggerNextSwap() {
     const modes = [1, 2, 3].filter((m) => m !== this.currentMode);
     const newMode = modes[Math.floor(Math.random() * modes.length)] ?? 1;
     this.currentMode = newMode;
 
-    const origBlue = this.blueKeysOriginal;
-    const origRed = this.redKeysOriginal;
+    const blue = this.blueInputOriginal; // Blue's canonical input
+    const red  = this.redInputOriginal;  // Red's canonical input
 
     let bannerText = "";
     let colorHex = "#ffffff";
     let bgHex = 0x000000;
 
     if (newMode === 1) {
-      // Mode 1: INVERSION (Left means Right, Right means Left for both)
+      // Mode 1: INVERSION — left/right reversed for both players.
+      // InvertedInput wraps the canonical source, delegating left()→right() and
+      // vice versa. Each player's jump input remains unchanged.
       sfx.mode1Invert();
-      this.blue.setKeys({ left: origBlue.right, right: origBlue.left, jump: origBlue.jump });
-      this.red.setKeys({ left: origRed.right, right: origRed.left, jump: origRed.jump });
+      this.blueCombined.setSources(new InvertedInput(blue));
+      this.redCombined.setSources(new InvertedInput(red));
       bannerText = "⚡ MODE 1: INVERTED CONTROLS! (Left ↔ Right)";
       colorHex = "#ff9933";
       bgHex = 0x331a00;
     } else if (newMode === 2) {
-      // Mode 2: CROSS / SPLIT JUMP CONTROL (Red jumps Blue / Blue jumps Red)
+      // Mode 2: SPLIT CONTROL
+      // Blue moves with their own left/right, but their OWN jump is blocked.
+      // Red's jump key exclusively controls Blue's jump, and vice versa.
+      // MoveOnlyInput strips own jump; JumpOnlyInput strips partner's movement.
       sfx.mode2Split();
-      this.blue.setKeys({ left: origBlue.left, right: origBlue.right, jump: origRed.jump });
-      this.red.setKeys({ left: origRed.left, right: origRed.right, jump: origBlue.jump });
+      this.blueCombined.setSources(
+        new MoveOnlyInput(blue), // Blue's left/right — own jump blocked
+        new JumpOnlyInput(red),  // Red's jump key only — no left/right bleed
+      );
+      this.redCombined.setSources(
+        new MoveOnlyInput(red),  // Red's left/right — own jump blocked
+        new JumpOnlyInput(blue), // Blue's jump key only — no left/right bleed
+      );
       bannerText = "🔀 MODE 2: SPLIT CONTROL! (Red Jumps Blue / Blue Jumps Red)";
       colorHex = "#cc66ff";
       bgHex = 0x260033;
     } else {
-      // Mode 3: PLAYER ROLE SWAP (Blue = Arrows, Red = WASD)
+      // Mode 3: FULL ROLE SWAP — Blue gets Red's complete input set, and vice
+      // versa. Both keyboard and controller assignments follow the swap.
       sfx.mode3RoleSwap();
-      this.blue.setKeys({ left: origRed.left, right: origRed.right, jump: origRed.jump });
-      this.red.setKeys({ left: origBlue.left, right: origBlue.right, jump: origBlue.jump });
-      bannerText = "🔀 MODE 3: PLAYER ROLE SWAP! (Blue = Arrows, Red = WASD)";
+      this.blueCombined.setSources(red);  // Blue now uses Red's inputs
+      this.redCombined.setSources(blue);  // Red now uses Blue's inputs
+      bannerText = "🔀 MODE 3: PLAYER ROLE SWAP! (Blue = Arrows/Pad2, Red = WASD/Pad1)";
       colorHex = "#4aa3ff";
       bgHex = 0x001a33;
     }

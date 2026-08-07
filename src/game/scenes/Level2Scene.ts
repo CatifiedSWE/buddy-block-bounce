@@ -1,6 +1,9 @@
 import * as Phaser from "phaser";
 import { COLORS, PHYSICS, TEX, TILE } from "../utils/constants";
-import { Player, type PlayerKeys } from "../entities/Player";
+import { Player } from "../entities/Player";
+import { KeyboardInput } from "../input/KeyboardInput";
+import { GamepadInput } from "../input/GamepadInput";
+import { CombinedInput } from "../input/CombinedInput";
 import { LEVEL_2 } from "../levels/level2";
 import type { TileRect } from "../levels/level1";
 import { sfx } from "../utils/sfx";
@@ -292,14 +295,23 @@ export class Level2Scene extends Phaser.Scene {
     const key = (code: number) => kb.addKey(code, true, false);
     const K = Phaser.Input.Keyboard.KeyCodes;
 
-    const blueKeys: PlayerKeys = { left: key(K.A), right: key(K.D), jump: key(K.W) };
-    const redKeys: PlayerKeys = { left: key(K.LEFT), right: key(K.RIGHT), jump: key(K.UP) };
+    // Blue: WASD keyboard + Controller 1 (gamepad index 0)
+    const blueInput = new CombinedInput(
+      new KeyboardInput(key(K.A), key(K.D), key(K.W)),
+      new GamepadInput(0),
+    );
+
+    // Red: Arrow Keys keyboard + Controller 2 (gamepad index 1)
+    const redInput = new CombinedInput(
+      new KeyboardInput(key(K.LEFT), key(K.RIGHT), key(K.UP)),
+      new GamepadInput(1),
+    );
 
     const spawnBlue = LEVEL_2.objects.find((o) => o.name === "spawn-blue")!;
     const spawnRed = LEVEL_2.objects.find((o) => o.name === "spawn-red")!;
 
-    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", blueKeys);
-    this.red = new Player(this, px(spawnRed.x), px(spawnRed.y) - 20, "red", redKeys);
+    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", blueInput);
+    this.red = new Player(this, px(spawnRed.x), px(spawnRed.y) - 20, "red", redInput);
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);

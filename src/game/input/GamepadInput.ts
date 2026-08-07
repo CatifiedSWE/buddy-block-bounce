@@ -1,0 +1,63 @@
+import type { InputSource } from "./InputSource";
+
+/**
+ * GamepadInput — reads from the browser Gamepad API for a single controller.
+ *
+ * Button mapping (standard gamepad layout):
+ *   Movement : Left analog stick (axes[0]) with deadzone, D-Pad Left/Right
+ *              buttons[14] = D-Pad Left, buttons[15] = D-Pad Right
+ *   Jump     : buttons[0]  (Xbox: A, PlayStation: Cross, Switch: B)
+ *
+ * Resilience:
+ *   `navigator.getGamepads()` is called fresh every frame — it always returns
+ *   the live snapshot. If the gamepad at `padIndex` is absent (disconnected or
+ *   never connected) every method returns false. Keyboard input continues
+ *   working automatically via CombinedInput's OR logic.
+ *
+ *   When the controller reconnects, the next frame's `getGamepads()` call will
+ *   find it again and input resumes with zero configuration needed.
+ *
+ * padIndex accepts any number so this class can support future n-player modes
+ * or debug scenarios without modification.
+ */
+export class GamepadInput implements InputSource {
+  private static readonly DEADZONE = 0.3;
+
+  /** Tracks whether jump was held last frame — used to compute the rising edge. */
+  private prevJump = false;
+
+  constructor(private readonly padIndex: number) {}
+
+  /** Returns the live Gamepad snapshot, or null if unavailable. */
+  private pad(): Gamepad | null {
+    // navigator.getGamepads may be undefined in some environments (e.g. SSR).
+    return navigator.getGamepads?.()[this.padIndex] ?? null;
+  }
+
+  left(): boolean {
+    const p = this.pad();
+    if (!p) return false;
+    const axisX = p.axes[0] ?? 0;
+    return axisX < -GamepadInput.DEADZONE || (p.buttons[14]?.pressed ?? false);
+  }
+
+  right(): boolean {
+    const p = this.pad();
+    if (!p) return false;
+    const axisX = p.axes[0] ?? 0;
+    return axisX > GamepadInput.DEADZONE || (p.buttons[15]?.pressed ?? false);
+  }
+
+  jump(): boolean {
+    const p = this.pad();
+    return !!p && (p.buttons[0]?.pressed ?? false);
+  }
+
+  jumpPressed(): boolean {
+    const cur = this.jump();
+    // Rising edge: currently pressed AND was not pressed last frame.
+    const pressed = cur && !this.prevJump;
+    this.prevJump = cur;
+    return pressed;
+  }
+}
