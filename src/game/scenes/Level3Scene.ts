@@ -596,6 +596,7 @@ export class Level3Scene extends Phaser.Scene {
     if (this.dying || this.finished) return;
     this.dying = true;
 
+    GamepadInput.vibrateAll(400, 0.8, 0.8);
     sfx.trap();
     this.cameras.main.shake(320, 0.015);
 
@@ -663,6 +664,7 @@ export class Level3Scene extends Phaser.Scene {
 
     sfx.trap();
     cam.shake(500, 0.015);
+    GamepadInput.vibrateAll(500, 0.6, 0.6);
 
     // Dark vignette background overlay
     const overlay = this.add
@@ -763,6 +765,7 @@ export class Level3Scene extends Phaser.Scene {
           evilText.setText(fullText.substring(0, charIdx));
           sfx.land();
           cam.shake(80, 0.005);
+          GamepadInput.vibrateAll(80, 0.25, 0.25);
         },
       });
     });
@@ -771,6 +774,7 @@ export class Level3Scene extends Phaser.Scene {
     this.time.delayedCall(4000, () => {
       // Violent earthquake shake
       cam.shake(2800, 0.04);
+      GamepadInput.vibrateAll(2800, 0.9, 0.9);
       sfx.trap();
 
       // Shockwave ring expanding from character

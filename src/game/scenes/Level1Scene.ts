@@ -204,6 +204,7 @@ export class Level1Scene extends Phaser.Scene {
     if (this.dying || this.finished) return;
     this.dying = true;
 
+    GamepadInput.vibrateAll(400, 0.8, 0.8);
     sfx.trap();
     this.cameras.main.shake(320, 0.015);
 

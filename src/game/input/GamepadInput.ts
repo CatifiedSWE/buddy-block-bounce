@@ -60,4 +60,46 @@ export class GamepadInput implements InputSource {
     this.prevJump = cur;
     return pressed;
   }
+
+  /**
+   * Vibrates all connected gamepads using the standard Gamepad API's vibrationActuator or vibration properties, with pulse fallbacks.
+   */
+  static vibrateAll(durationMs = 400, strongMagnitude = 0.8, weakMagnitude = 0.8): void {
+    if (typeof navigator === "undefined" || !navigator.getGamepads) return;
+    try {
+      const pads = navigator.getGamepads();
+      if (!pads) return;
+      for (let i = 0; i < pads.length; i++) {
+        const pad = pads[i];
+        if (!pad) continue;
+
+        // Try standard vibrationActuator, or vibration fallback (Phaser / Firefox custom properties)
+        const actuator = (pad as any).vibrationActuator || (pad as any).vibration;
+        if (actuator && typeof actuator.playEffect === "function") {
+          actuator.playEffect("dual-rumble", {
+            startDelay: 0,
+            duration: durationMs,
+            strongMagnitude: strongMagnitude,
+            weakMagnitude: weakMagnitude,
+          }).catch((err: any) => {
+            console.warn(`Gamepad ${i} vibration failed:`, err);
+          });
+        } else if (actuator && typeof actuator.pulse === "function") {
+          actuator.pulse(strongMagnitude, durationMs);
+        } else {
+          // Fallback to legacy hapticActuators
+          const hapticActuators = (pad as any).hapticActuators;
+          if (hapticActuators && hapticActuators.length > 0) {
+            for (const ha of hapticActuators) {
+              if (ha && typeof ha.pulse === "function") {
+                ha.pulse(strongMagnitude, durationMs);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to trigger gamepad vibration:", e);
+    }
+  }
 }
