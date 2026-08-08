@@ -26,6 +26,10 @@ export function GameCanvas({ initialLevel = "DemoLevel" }: GameCanvasProps) {
       if (import.meta.env.DEV) {
         (window as unknown as { __game?: Phaser.Game }).__game = game;
       }
+      game.events.on("level-change", (levelKey: string) => {
+        setActiveLevel(levelKey);
+        setComplete(false);
+      });
       game.events.on("level-complete", () => setComplete(true));
     })();
 

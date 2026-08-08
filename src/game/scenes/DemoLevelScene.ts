@@ -1,6 +1,9 @@
 import * as Phaser from "phaser";
 import { COLORS, PHYSICS, TEX, TILE } from "../utils/constants";
-import { Player, type PlayerKeys } from "../entities/Player";
+import { Player } from "../entities/Player";
+import { KeyboardInput } from "../input/KeyboardInput";
+import { GamepadInput } from "../input/GamepadInput";
+import { CombinedInput } from "../input/CombinedInput";
 import { ColorButton } from "../mechanics/Button";
 import { Door } from "../mechanics/Door";
 import { Bridge, type PlankRect } from "../mechanics/Bridge";
@@ -46,6 +49,18 @@ export class DemoLevelScene extends Phaser.Scene {
   }
 
   create() {
+    this.finished = false;
+    this.exitTimer = 0;
+    this.checkpointIndex = -1;
+    this.struggleMs = 0;
+    this.struggleHintShown = false;
+    this.camZoom = 1;
+    this.buttons = {};
+    this.doors = {};
+    this.bridges = {};
+    this.triggers = [];
+    this.checkpoints = [];
+
     const worldW = px(DEMO_LEVEL.width);
     const worldH = px(DEMO_LEVEL.height);
 
@@ -205,14 +220,23 @@ export class DemoLevelScene extends Phaser.Scene {
     const key = (code: number) => kb.addKey(code, true, false);
     const K = Phaser.Input.Keyboard.KeyCodes;
 
-    const blueKeys: PlayerKeys = { left: key(K.A), right: key(K.D), jump: key(K.W) };
-    const redKeys: PlayerKeys = { left: key(K.LEFT), right: key(K.RIGHT), jump: key(K.UP) };
+    // Blue: WASD keyboard + Controller 1 (gamepad index 0)
+    const blueInput = new CombinedInput(
+      new KeyboardInput(key(K.A), key(K.D), key(K.W)),
+      new GamepadInput(0),
+    );
+
+    // Red: Arrow Keys keyboard + Controller 2 (gamepad index 1)
+    const redInput = new CombinedInput(
+      new KeyboardInput(key(K.LEFT), key(K.RIGHT), key(K.UP)),
+      new GamepadInput(1),
+    );
 
     const spawnBlue = DEMO_LEVEL.objects.find((o) => o.name === "spawn-blue")!;
     const spawnRed = DEMO_LEVEL.objects.find((o) => o.name === "spawn-red")!;
 
-    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", blueKeys);
-    this.red = new Player(this, px(spawnRed.x), px(spawnRed.y) - 20, "red", redKeys);
+    this.blue = new Player(this, px(spawnBlue.x), px(spawnBlue.y) - 20, "blue", blueInput);
+    this.red = new Player(this, px(spawnRed.x), px(spawnRed.y) - 20, "red", redInput);
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);
@@ -446,7 +470,6 @@ export class DemoLevelScene extends Phaser.Scene {
     this.players.forEach((p) => p.body_.setVelocity(0, 0));
 
     const cam = this.cameras.main;
-    cam.fadeOut(900, 0, 0, 0);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       const cx = cam.width / 2;
       const cy = cam.height / 2;
@@ -478,9 +501,11 @@ export class DemoLevelScene extends Phaser.Scene {
       this.tweens.add({ targets: title, alpha: 1, duration: 700, delay: 200 });
       this.tweens.add({ targets: sub, alpha: 1, duration: 700, delay: 1200 });
 
+      this.game.events.emit("level-change", "Level1");
       this.time.delayedCall(2400, () => {
         this.scene.start("Level1");
       });
     });
+    cam.fadeOut(900, 0, 0, 0);
   }
 }

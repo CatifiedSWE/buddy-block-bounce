@@ -7,6 +7,10 @@ export class BootScene extends Phaser.Scene {
     super("Boot");
   }
 
+  preload() {
+    this.load.audio("ysnp", "/you-shall-not-pass.mp3");
+  }
+
   create() {
     generateTextures(this);
     // A single 1x1 white pixel used for background dust.

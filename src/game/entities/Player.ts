@@ -1,24 +1,25 @@
 import * as Phaser from "phaser";
 import { PHYSICS, TEX, type PlayerId } from "../utils/constants";
 import { sfx } from "../utils/sfx";
-
-export interface PlayerKeys {
-  left: Phaser.Input.Keyboard.Key;
-  right: Phaser.Input.Keyboard.Key;
-  jump: Phaser.Input.Keyboard.Key;
-}
+import type { InputSource } from "../input/InputSource";
 
 /**
  * A tightly-tuned platformer avatar: coyote time, jump buffering and
  * acceleration-based ground movement. Players are non-pushable so they can be
  * stacked on top of each other.
+ *
+ * Input abstraction: Player depends only on InputSource. It has zero knowledge
+ * of keyboards, gamepads, or any other physical device. The scene is responsible
+ * for constructing the appropriate InputSource (typically a CombinedInput) and
+ * passing it here. To change, swap, or invert controls, the scene calls
+ * `setInput()` without touching any gameplay logic.
  */
 export class Player extends Phaser.Physics.Arcade.Sprite {
   readonly id: PlayerId;
   spawnX: number;
   spawnY: number;
 
-  private keys: PlayerKeys;
+  private _input: InputSource;
   private coyote = 0;
   private buffer = 0;
   private wasOnFloor = true;
@@ -26,10 +27,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   /** Set by the scene when this player is stood on their partner's head. */
   standingOnPartner = false;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, id: PlayerId, keys: PlayerKeys) {
+  constructor(scene: Phaser.Scene, x: number, y: number, id: PlayerId, input: InputSource) {
     super(scene, x, y, id === "blue" ? TEX.playerBlue : TEX.playerRed);
     this.id = id;
-    this.keys = keys;
+    this._input = input;
     this.spawnX = x;
     this.spawnY = y;
 
@@ -58,7 +59,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   respawn() {
     this.setPosition(this.spawnX, this.spawnY);
+    this.body_.reset(this.spawnX, this.spawnY);
     this.body_.setVelocity(0, 0);
+    this.body_.setAcceleration(0, 0);
+    this.coyote = 0;
+    this.buffer = 0;
+    this.wasOnFloor = true;
+    this.standingOnPartner = false;
     this.setAlpha(0);
     this.scene.tweens.add({ targets: this, alpha: 1, duration: 220 });
     sfx.respawn();
@@ -69,9 +76,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.spawnY = y;
   }
 
-  /** Rewire the movement keys (used for the Level 3 twist mechanic). */
-  setKeys(keys: PlayerKeys) {
-    this.keys = { left: keys.left, right: keys.right, jump: keys.jump };
+  /**
+   * Rewire the input source for this player at runtime.
+   * Used by Level 3's control-scrambling mechanic; Player remains completely
+   * unaware of what device or modifier is behind the new source.
+   */
+  setInput(source: InputSource) {
+    this._input = source;
   }
 
   tick(deltaMs: number) {
@@ -90,8 +101,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.wasOnFloor = grounded;
 
     // horizontal
-    const left = this.keys.left.isDown;
-    const right = this.keys.right.isDown;
+    const left = this._input.left();
+    const right = this._input.right();
     if (left === right) {
       body.setAccelerationX(0);
     } else if (left) {
@@ -103,7 +114,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // jump buffer
-    if (Phaser.Input.Keyboard.JustDown(this.keys.jump)) this.buffer = PHYSICS.jumpBufferMs;
+    if (this._input.jumpPressed()) this.buffer = PHYSICS.jumpBufferMs;
     else this.buffer = Math.max(0, this.buffer - deltaMs);
 
     if (this.buffer > 0 && this.coyote > 0) {
@@ -116,7 +127,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // variable jump height
-    if (!this.keys.jump.isDown && body.velocity.y < -180) {
+    if (!this._input.jump() && body.velocity.y < -180) {
       body.setVelocityY(body.velocity.y + 22);
     }
 
