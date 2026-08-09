@@ -69,13 +69,6 @@ export class Level2Scene extends Phaser.Scene {
   private harmlessRightTriggered = false;
   private fakeSpikeMessageShown = false;
 
-  // Act 4 Non-freezing warning containers
-  private pitWarningContainer: Phaser.GameObjects.Container | null = null;
-  private pitWarningText: Phaser.GameObjects.Text | null = null;
-  private pitWarningBox: Phaser.GameObjects.Rectangle | null = null;
-  private pitWarningTriggered = false;
-  private justKiddingTriggered = false;
-
   constructor() {
     super("Level2");
   }
@@ -103,9 +96,6 @@ export class Level2Scene extends Phaser.Scene {
     this.fastRightSpikesActive = false;
     this.harmlessRightTriggered = false;
     this.fakeSpikeMessageShown = false;
-    this.pitWarningTriggered = false;
-    this.justKiddingTriggered = false;
-    this.pitWarningContainer = null;
     this.checkpointIndex = -1;
     this.chaserX = -9999;
     this.chaserHitbox = new Phaser.Geom.Rectangle(-9999, 0, TILE, px(LEVEL_2.height));
@@ -430,12 +420,6 @@ export class Level2Scene extends Phaser.Scene {
         fired: false,
         run: () => this.triggerHarmlessRightSpikes(),
       },
-      // PIT AHEAD warning 15 tiles away from exit (exit at x=113, so 113-15 = 98)
-      {
-        x: px(98),
-        fired: false,
-        run: () => this.triggerPitWarning(),
-      },
       // Collapsing Pit 3 at exit door (4 tiles wide at x: 112..115, user coord x: 3600.65)
       {
         x: 3570,
@@ -668,95 +652,6 @@ export class Level2Scene extends Phaser.Scene {
     });
   }
 
-  // ─── PIT AHEAD warning (15 tiles away from exit, 2 seconds freeze) ─────────
-
-  private triggerPitWarning() {
-    if (this.pitWarningTriggered || this.finished) return;
-    this.pitWarningTriggered = true;
-    this.isFrozen = true;
-
-    // Freeze player movement
-    this.players.forEach((p) => {
-      p.body_.setVelocity(0, 0);
-      p.body_.setAcceleration(0, 0);
-    });
-
-    sfx.buttonOn();
-
-    const cam = this.cameras.main;
-    const cx = cam.width / 2;
-    const cy = 70; // top center screen
-
-    this.pitWarningContainer = this.add.container(cx, cy).setScrollFactor(0).setDepth(200);
-
-    this.pitWarningBox = this.add
-      .rectangle(0, 0, 420, 56, 0x0d0f16, 0.95)
-      .setStrokeStyle(3, 0xff5a55);
-    this.pitWarningContainer.add(this.pitWarningBox);
-
-    this.pitWarningText = this.add
-      .text(0, 0, "⚠ PIT AHEAD", {
-        fontFamily: "monospace",
-        fontSize: "22px",
-        color: "#ff5a55",
-        align: "center",
-      })
-      .setOrigin(0.5);
-    this.pitWarningContainer.add(this.pitWarningText);
-
-    // After 2 seconds of PIT AHEAD: unfreeze scene and show "Just kidding. 😂"
-    this.time.delayedCall(2000, () => {
-      this.isFrozen = false;
-      this.triggerJustKidding();
-    });
-  }
-
-  // ─── Just Kidding warning ───────────────────────────────────────────────────
-
-  private triggerJustKidding() {
-    if (this.justKiddingTriggered || this.finished) return;
-    this.justKiddingTriggered = true;
-    sfx.save();
-
-    if (!this.pitWarningContainer) {
-      const cam = this.cameras.main;
-      const cx = cam.width / 2;
-      const cy = 70;
-      this.pitWarningContainer = this.add.container(cx, cy).setScrollFactor(0).setDepth(200);
-      this.pitWarningBox = this.add
-        .rectangle(0, 0, 420, 56, 0x0d0f16, 0.95)
-        .setStrokeStyle(3, 0x4aa3ff);
-      this.pitWarningContainer.add(this.pitWarningBox);
-      this.pitWarningText = this.add
-        .text(0, 0, "Just kidding. 😂", {
-          fontFamily: "monospace",
-          fontSize: "22px",
-          color: "#4aa3ff",
-          align: "center",
-        })
-        .setOrigin(0.5);
-      this.pitWarningContainer.add(this.pitWarningText);
-    } else if (this.pitWarningBox && this.pitWarningText) {
-      this.pitWarningBox.setStrokeStyle(3, 0x4aa3ff);
-      this.pitWarningText.setText("Just kidding. 😂").setColor("#4aa3ff");
-    }
-
-    this.time.delayedCall(1500, () => {
-      if (this.pitWarningContainer) {
-        this.tweens.add({
-          targets: this.pitWarningContainer,
-          alpha: 0,
-          scale: 0.8,
-          duration: 350,
-          onComplete: () => {
-            this.pitWarningContainer?.destroy();
-            this.pitWarningContainer = null;
-          },
-        });
-      }
-    });
-  }
-
   // ─── Shared death ────────────────────────────────────────────────────────────
 
   private triggerSharedDeath() {
@@ -774,12 +669,6 @@ export class Level2Scene extends Phaser.Scene {
     this.chaserSprites.forEach((sp) => sp.setVisible(false).setAlpha(0));
     this.fastRightSpikesActive = false;
     this.fastRightSprites.forEach((sp) => sp.setVisible(false).setAlpha(0));
-
-    // Destroy warning container if present
-    if (this.pitWarningContainer) {
-      this.pitWarningContainer.destroy();
-      this.pitWarningContainer = null;
-    }
 
     this.players.forEach((p) => {
       const sp = this.add.particles(p.x, p.y, TEX.spark, {

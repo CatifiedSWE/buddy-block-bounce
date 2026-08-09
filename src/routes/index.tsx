@@ -22,15 +22,27 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  const [startedLevel, setStartedLevel] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:py-12">
-      <div className="mx-auto w-full max-w-3xl md:max-w-4xl">
-        {startedLevel ? (
-          <GameCanvas initialLevel={startedLevel} />
+    <main
+      className={`relative flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:py-12 ${!started
+          ? "bg-cover bg-center bg-no-repeat bg-fixed"
+          : "bg-background"
+        }`}
+      style={
+        !started
+          ? {
+            backgroundImage: "url('/background-image.png')",
+          }
+          : undefined
+      }
+    >
+      <div className="relative z-10 mx-auto w-full max-w-3xl md:max-w-4xl">
+        {started ? (
+          <GameCanvas />
         ) : (
-          <ControlsScreen onStart={(levelKey = "Level1") => setStartedLevel(levelKey)} />
+          <ControlsScreen onStart={() => setStarted(true)} />
         )}
       </div>
     </main>
