@@ -24,6 +24,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private buffer = 0;
   private wasOnFloor = true;
   private squash = 1;
+  private prevX: number;
+  private logTimer = 500;
   /** Set by the scene when this player is stood on their partner's head. */
   standingOnPartner = false;
 
@@ -33,6 +35,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this._input = input;
     this.spawnX = x;
     this.spawnY = y;
+    this.prevX = x;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -62,6 +65,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.body_.reset(this.spawnX, this.spawnY);
     this.body_.setVelocity(0, 0);
     this.body_.setAcceleration(0, 0);
+    this.prevX = this.spawnX;
+    this.logTimer = 500;
     this.coyote = 0;
     this.buffer = 0;
     this.wasOnFloor = true;
@@ -86,6 +91,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   tick(deltaMs: number) {
+    this.logTimer += deltaMs;
+    if (this.x !== this.prevX && this.logTimer >= 500) {
+      console.log(`Player (${this.id}) x: ${this.x}`);
+      this.prevX = this.x;
+      this.logTimer = 0;
+    }
     const body = this.body_;
     const grounded = this.onFloor;
 

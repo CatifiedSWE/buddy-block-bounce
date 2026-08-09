@@ -8,6 +8,7 @@ import type { InputSource } from "../input/InputSource";
 import { KeyboardInput } from "../input/KeyboardInput";
 import { GamepadInput } from "../input/GamepadInput";
 import { CombinedInput } from "../input/CombinedInput";
+import { TimedPlatform } from "../mechanics/TimedPlatform";
 
 /**
  * InvertedInput — modifier that swaps left ↔ right on the wrapped source.
@@ -67,14 +68,18 @@ const toRect = (r: TileRect) => ({
 });
 
 export class Level3Scene extends Phaser.Scene {
+  private static introSeen = false;
+
   private blue!: Player;
   private red!: Player;
   private players: Player[] = [];
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private spikesGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private timedPlatformsGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private timedPlatforms: TimedPlatform[] = [];
 
   private exitDoorGraphic!: Phaser.GameObjects.Image;
-  private postMazeZoneX = px(50); // x coordinate entering post-maze empty room
+  private postMazeZoneX = px(81) - 30; // x coordinate threshold of exit door
 
   // Original per-player input sources — the "canonical" inputs, never mutated.
   // blueInputOriginal = keyboard WASD + Controller 1
@@ -93,7 +98,7 @@ export class Level3Scene extends Phaser.Scene {
   private camZoom = 1;
 
   // Intro state
-  private introActive = true;
+  private introActive = false;
   private broomSprite!: Phaser.GameObjects.Graphics;
   private broomX = 0;
   private broomY = 0;
@@ -126,8 +131,6 @@ export class Level3Scene extends Phaser.Scene {
   create() {
     this.finished = false;
     this.dying = false;
-    this.isFrozen = true;
-    this.introActive = true;
     this.swapTriggered = false;
     this.postMazeTriggered = false;
     this.evilShown = false;
@@ -136,6 +139,12 @@ export class Level3Scene extends Phaser.Scene {
     this.nextSwapMs = Phaser.Math.Between(8000, 10000);
     this.currentMode = 0;
     this.modeBanner = undefined;
+    this.timedPlatforms = [];
+
+    const exitDef = LEVEL_3.objects.find((o) => o.name === "maze-exit");
+    if (exitDef) {
+      this.postMazeZoneX = px(exitDef.x) - 30;
+    }
 
     const worldW = px(LEVEL_3.width);
     const worldH = px(LEVEL_3.height);
@@ -148,12 +157,28 @@ export class Level3Scene extends Phaser.Scene {
 
     this.buildBackground(worldW, worldH);
     this.buildSolids();
+    this.timedPlatformsGroup = this.physics.add.staticGroup();
+    this.buildTimedPlatforms();
     this.buildSpikes();
     this.buildPlayers();
-    this.buildBroom();
-    this.runIntroSequence();
 
-    this.cameras.main.fadeIn(600, 0, 0, 0);
+    if (!Level3Scene.introSeen) {
+      Level3Scene.introSeen = true;
+      this.isFrozen = true;
+      this.introActive = true;
+      this.buildBroom();
+      this.runIntroSequence();
+    } else {
+      this.isFrozen = false;
+      this.introActive = false;
+      const spawnBlue = LEVEL_3.objects.find((o) => o.name === "spawn-blue")!;
+      const spawnRed  = LEVEL_3.objects.find((o) => o.name === "spawn-red")!;
+      this.blue.setPosition(px(spawnBlue.x), px(spawnBlue.y) - 20);
+      this.red.setPosition(px(spawnRed.x), px(spawnRed.y) - 20);
+      this.cameras.main.centerOn(px(spawnBlue.x) + 40, px(spawnBlue.y) - 20);
+    }
+
+    this.cameras.main.fadeIn(400, 0, 0, 0);
   }
 
   // ─── Background ──────────────────────────────────────────────────────────────
@@ -205,11 +230,18 @@ export class Level3Scene extends Phaser.Scene {
     (tile.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
   }
 
+  private buildTimedPlatforms() {
+    (LEVEL_3.timedPlatforms ?? []).forEach((r) => {
+      const plat = new TimedPlatform(this, this.timedPlatformsGroup, toRect(r));
+      this.timedPlatforms.push(plat);
+    });
+  }
+
   private buildSpikes() {
     this.spikesGroup = this.physics.add.staticGroup();
-    (LEVEL_3.spikes ?? []).forEach((s, idx) => {
+    (LEVEL_3.spikes ?? []).forEach((s) => {
       const r = toRect(s);
-      const isCeiling = idx === 1; // upper path ceiling spikes
+      const isCeiling = s.y <= 2; // ceiling spikes check
       for (let x = r.x; x < r.x + r.width; x += TILE) {
         const sp = this.add
           .image(x + TILE / 2, isCeiling ? r.y : r.y + TILE, TEX.spike)
@@ -257,6 +289,21 @@ export class Level3Scene extends Phaser.Scene {
     this.players = [this.blue, this.red];
 
     this.physics.add.collider(this.players, this.solids);
+    // Collide with platforms without triggering disappearance (disappearing feature commented out)
+    this.physics.add.collider(this.players, this.timedPlatformsGroup);
+    /*
+    this.physics.add.collider(this.players, this.timedPlatformsGroup, (playerObj, platformTile) => {
+      const p = playerObj as Player;
+      const pb = p.body_;
+      const tileSprite = platformTile as Phaser.GameObjects.TileSprite;
+      if (pb.touching.down || pb.blocked.down || p.y <= tileSprite.y + 6) {
+        const timedPlat = this.timedPlatforms.find((tp) => tp.sprite === tileSprite);
+        if (timedPlat) {
+          timedPlat.trigger();
+        }
+      }
+    });
+    */
     this.physics.add.overlap(this.players, this.spikesGroup, () => {
       this.triggerDeath();
     });
@@ -318,12 +365,12 @@ export class Level3Scene extends Phaser.Scene {
     const landX = px(5);
     const landY = px(15) - 18;
 
-    // Step 1: Broom flies through cave
+    // Step 1: Broom swoops in smoothly (1800ms)
     this.tweens.add({
       targets: { dummy: 0 },
       dummy: 1,
-      duration: 3500,
-      ease: "Linear",
+      duration: 1800,
+      ease: "Quad.easeOut",
       onUpdate: (_, __, ___, current: number) => {
         this.broomX = Phaser.Math.Linear(-120, landX, current);
         this.broomY = flyY;
@@ -333,18 +380,12 @@ export class Level3Scene extends Phaser.Scene {
         cam.centerOn(this.broomX + 100, flyY);
       },
       onComplete: () => {
-        // Step 2: Display controls
+        // Step 2: Show controls & twist prompt (2.8s total)
         this.showControlsPanel();
 
-        // Step 3: Display "But with a twist..." after reading controls
-        this.time.delayedCall(4000, () => {
-          this.showTwistMessage();
-
-          // Step 4: Broom lands at entrance of maze
-          this.time.delayedCall(1500, () => {
-            this.hideTwistMessage(() => {
-              this.landBroom(landX, landY);
-            });
+        this.time.delayedCall(2800, () => {
+          this.hideControlsPanel(() => {
+            this.landBroom(landX, landY);
           });
         });
       },
@@ -358,85 +399,73 @@ export class Level3Scene extends Phaser.Scene {
 
     this.controlsContainer = this.add.container(0, 0).setScrollFactor(0).setDepth(100).setAlpha(0);
 
-    const panelBg = this.add.rectangle(W / 2, H / 2, 480, 220, 0x0d0f16, 0.92)
+    const panelBg = this.add.rectangle(W / 2, H / 2, 460, 180, 0x0d0f16, 0.94)
       .setStrokeStyle(2, 0x3a4760);
     this.controlsContainer.add(panelBg);
 
-    const titleText = this.add.text(W / 2, H / 2 - 85, "CONTROLS", {
+    const titleText = this.add.text(W / 2, H / 2 - 65, "CONTROLS", {
       fontFamily: "monospace",
-      fontSize: "14px",
+      fontSize: "13px",
       color: "#8ea0bf",
       align: "center",
-      letterSpacing: 6,
+      letterSpacing: 4,
     }).setOrigin(0.5);
     this.controlsContainer.add(titleText);
 
-    const blueBlock = this.add.text(W / 2 - 110, H / 2 - 50,
-      "BLUE PLAYER\n\nA = Move Left\nD = Move Right\nW = Jump", {
+    const blueBlock = this.add.text(W / 2 - 100, H / 2 - 40,
+      "BLUE\nA = Left\nD = Right\nW = Jump", {
       fontFamily: "monospace",
-      fontSize: "16px",
+      fontSize: "14px",
       color: "#4aa3ff",
       align: "center",
-      lineSpacing: 8,
+      lineSpacing: 4,
     }).setOrigin(0.5, 0);
     this.controlsContainer.add(blueBlock);
 
-    const divider = this.add.rectangle(W / 2, H / 2, 2, 140, 0x2c3a50);
+    const divider = this.add.rectangle(W / 2, H / 2 - 10, 2, 80, 0x2c3a50);
     this.controlsContainer.add(divider);
 
-    const redBlock = this.add.text(W / 2 + 110, H / 2 - 50,
-      "RED PLAYER\n\n↑ = Move Up\n↓ = Move Down\n← = Move Left\n→ = Move Right", {
+    const redBlock = this.add.text(W / 2 + 100, H / 2 - 40,
+      "RED\n← = Left\n→ = Right\n↑ = Jump", {
       fontFamily: "monospace",
-      fontSize: "15px",
+      fontSize: "14px",
       color: "#ff5a55",
       align: "center",
-      lineSpacing: 6,
+      lineSpacing: 4,
     }).setOrigin(0.5, 0);
     this.controlsContainer.add(redBlock);
 
-    this.tweens.add({
-      targets: this.controlsContainer,
-      alpha: 1,
-      duration: 600,
-      ease: "Sine.easeOut",
-    });
-  }
-
-  private showTwistMessage() {
-    const cam = this.cameras.main;
-    const W = cam.width;
-    const H = cam.height;
-
-    this.tweens.add({
-      targets: this.controlsContainer,
-      alpha: 0,
-      duration: 400,
-      ease: "Sine.easeIn",
-    });
-
-    this.twistText = this.add.text(W / 2, H / 2, "But with a twist...", {
+    const twistNotice = this.add.text(W / 2, H / 2 + 60, "⚡ ...BUT WITH A TWIST!", {
       fontFamily: "monospace",
-      fontSize: "28px",
-      color: "#e8ecf5",
+      fontSize: "14px",
+      color: "#ffbb33",
+      fontStyle: "bold",
       align: "center",
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(101).setAlpha(0);
+    }).setOrigin(0.5);
+    this.controlsContainer.add(twistNotice);
 
     this.tweens.add({
-      targets: this.twistText,
+      targets: this.controlsContainer,
       alpha: 1,
-      y: H / 2 - 8,
-      duration: 700,
+      duration: 400,
       ease: "Sine.easeOut",
     });
   }
 
-  private hideTwistMessage(onDone: () => void) {
+  private hideControlsPanel(onDone: () => void) {
+    if (!this.controlsContainer) {
+      onDone();
+      return;
+    }
     this.tweens.add({
-      targets: this.twistText,
+      targets: this.controlsContainer,
       alpha: 0,
-      duration: 500,
+      duration: 350,
       ease: "Sine.easeIn",
-      onComplete: () => onDone(),
+      onComplete: () => {
+        this.controlsContainer.destroy();
+        onDone();
+      },
     });
   }
 
@@ -444,8 +473,8 @@ export class Level3Scene extends Phaser.Scene {
     this.tweens.add({
       targets: { dummy: 0 },
       dummy: 1,
-      duration: 1200,
-      ease: "Sine.easeInOut",
+      duration: 900,
+      ease: "Sine.easeOut",
       onUpdate: (_, __, ___, current: number) => {
         const curX = Phaser.Math.Linear(this.broomX, targetX, current);
         const curY = Phaser.Math.Linear(this.broomY, targetY, current);
@@ -972,9 +1001,9 @@ export class Level3Scene extends Phaser.Scene {
       }
     }
 
-    // Trigger post-maze evil character when stepping past the maze exit portal into empty room
-    const pastExit = this.players.every((p) => p.x > this.postMazeZoneX);
-    if (pastExit) {
+    // Trigger final ending scene when BOTH players have reached and crossed the exit portal coordinate
+    const bothReachedExit = this.players.every((p) => p.x >= this.postMazeZoneX);
+    if (bothReachedExit) {
       this.triggerPostMaze();
     }
   }
@@ -1005,6 +1034,7 @@ export class Level3Scene extends Phaser.Scene {
     }
 
     this.resolveStacking();
+    this.timedPlatforms.forEach((tp) => tp.update(delta));
     this.players.forEach((p) => p.tick(delta));
     this.updateCamera(delta);
     this.updateRespawn();

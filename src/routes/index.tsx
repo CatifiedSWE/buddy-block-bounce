@@ -30,7 +30,7 @@ function Index() {
         {startedLevel ? (
           <GameCanvas initialLevel={startedLevel} />
         ) : (
-          <ControlsScreen onStart={(levelKey = "DemoLevel") => setStartedLevel(levelKey)} />
+          <ControlsScreen onStart={(levelKey = "Level1") => setStartedLevel(levelKey)} />
         )}
       </div>
     </main>

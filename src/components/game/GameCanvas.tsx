@@ -9,7 +9,7 @@ interface GameCanvasProps {
  * Mounts the Phaser game. Phaser is imported lazily so it never touches the
  * SSR bundle.
  */
-export function GameCanvas({ initialLevel = "DemoLevel" }: GameCanvasProps) {
+export function GameCanvas({ initialLevel = "Level1" }: GameCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const [complete, setComplete] = useState(false);
@@ -51,22 +51,12 @@ export function GameCanvas({ initialLevel = "DemoLevel" }: GameCanvasProps) {
 
   return (
     <div className="relative w-full">
-      {/* Temporary Level Select Bar for Testing */}
+      {/* Level Select Bar for Testing */}
       <div className="mb-3 flex items-center justify-between gap-2 rounded-md border border-border bg-card/80 px-3 py-2">
         <span className="font-pixel text-[10px] text-muted-foreground tracking-wider">
-          ⚙ TEST LEVEL SELECT:
+          ⚙ LEVEL SELECT:
         </span>
         <div className="flex gap-2">
-          <button
-            onClick={() => switchLevel("DemoLevel")}
-            className={`px-3 py-1 font-pixel text-xs rounded border transition-colors ${
-              activeLevel === "DemoLevel"
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border-border hover:bg-accent"
-            }`}
-          >
-            Demo Level
-          </button>
           <button
             onClick={() => switchLevel("Level1")}
             className={`px-3 py-1 font-pixel text-xs rounded border transition-colors ${
@@ -107,7 +97,7 @@ export function GameCanvas({ initialLevel = "DemoLevel" }: GameCanvasProps) {
       />
       <p className="mt-3 text-center font-mono text-xs text-muted-foreground">
         {complete
-          ? `${activeLevel === "DemoLevel" ? "Demo level" : "Level 1"} cleared — thanks for playing!`
+          ? `${activeLevel} cleared — thanks for playing!`
           : "Blue: A / D / W  ·  Red: ← / → / ↑  ·  Click the canvas to focus"}
       </p>
     </div>

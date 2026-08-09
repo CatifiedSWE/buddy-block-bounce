@@ -20,16 +20,22 @@ export const LEVEL_2: LevelDefinition = {
     { x: 57, y: 20, width: 8, height: 6 },
     { x: 65, y: 19, width: 3, height: 7 }, // minor 1-tile step
     { x: 68, y: 20, width: 5, height: 6 }, // chase ends at x: 73
+    { x: 68, y: 25, width: 4, height: 1 }, // Pit bottom under collapsing trap at x: 68..71 (x: 2187, 4 tiles wide towards right)
 
     // Act 3 Breathing Space (x: 73..91, ~30m calm section with zero traps)
     { x: 73, y: 20, width: 18, height: 6 },
 
     // Act 4: Real Exit approach path (x: 91..121)
     { x: 91, y: 20, width: 30, height: 6 },
+    { x: 112, y: 25, width: 4, height: 1 }, // Pit bottom under collapsing trap at x: 112..115 (x: 3600, 4 tiles wide towards right)
   ],
   spikes: [
-    // Single pit spikes under collapsing floor (4 tiles wide at x: 18..21)
+    // Pit 1 spikes under collapsing floor (4 tiles wide at x: 18..21)
     { x: 18, y: 24, width: 4, height: 1 },
+    // Pit 2 spikes under collapsing floor at x: 2187 (4 tiles wide at x: 68..71)
+    { x: 68, y: 24, width: 4, height: 1 },
+    // Pit 3 spikes under collapsing floor at x: 3600 (4 tiles wide at x: 112..115)
+    { x: 112, y: 24, width: 4, height: 1 },
   ],
   objects: [
     // Spawns

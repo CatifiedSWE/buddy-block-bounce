@@ -6,6 +6,8 @@ import { GamepadInput } from "../input/GamepadInput";
 import { CombinedInput } from "../input/CombinedInput";
 import { ColorButton } from "../mechanics/Button";
 import { Door } from "../mechanics/Door";
+import { Bridge, type PlankRect } from "../mechanics/Bridge";
+import { TimedPlatform } from "../mechanics/TimedPlatform";
 import { LEVEL_1, type TileRect } from "../levels/level1";
 import { sfx } from "../utils/sfx";
 
@@ -24,9 +26,12 @@ export class Level1Scene extends Phaser.Scene {
   private players: Player[] = [];
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private spikesGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private timedPlatformsGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private timedPlatforms: TimedPlatform[] = [];
 
   private buttons: Record<string, ColorButton> = {};
   private doors: Record<string, Door> = {};
+  private bridges: Record<string, Bridge> = {};
 
   private exitZone!: Phaser.Geom.Rectangle;
   private exitTimer = 0;
@@ -37,6 +42,7 @@ export class Level1Scene extends Phaser.Scene {
   private checkpointIndex = -1;
 
   private triggers: Array<{ x: number; fired: boolean; run: () => void }> = [];
+  private tutorialBanner?: Phaser.GameObjects.Container | undefined;
   private camZoom = 1;
 
   // Act 3 Timed Door state
@@ -55,9 +61,12 @@ export class Level1Scene extends Phaser.Scene {
     this.exitTimer = 0;
     this.doorCountdownMs = 0;
     this.countdownText = undefined;
+    this.tutorialBanner = undefined;
     this.camZoom = 1;
     this.buttons = {};
     this.doors = {};
+    this.bridges = {};
+    this.timedPlatforms = [];
     this.triggers = [];
     this.checkpoints = [];
 
@@ -75,11 +84,15 @@ export class Level1Scene extends Phaser.Scene {
     this.solids = this.physics.add.staticGroup();
     LEVEL_1.solids.forEach((r) => this.addSolid(toRect(r)));
 
+    this.timedPlatformsGroup = this.physics.add.staticGroup();
+    this.buildTimedPlatforms();
+
     this.spikesGroup = this.physics.add.staticGroup();
     this.buildSpikes();
 
     this.buildObjects();
     this.buildPlayers();
+    this.buildTutorialBanner();
     this.wireMechanics();
     this.buildHints();
 
@@ -123,6 +136,13 @@ export class Level1Scene extends Phaser.Scene {
     this.solids.add(tile);
   }
 
+  private buildTimedPlatforms() {
+    (LEVEL_1.timedPlatforms ?? []).forEach((r) => {
+      const plat = new TimedPlatform(this, this.timedPlatformsGroup, toRect(r));
+      this.timedPlatforms.push(plat);
+    });
+  }
+
   private buildSpikes() {
     (LEVEL_1.spikes ?? []).forEach((s) => {
       const r = toRect(s);
@@ -134,6 +154,46 @@ export class Level1Scene extends Phaser.Scene {
         this.spikesGroup.add(spikeSprite);
       }
     });
+  }
+
+  private buildTutorialBanner() {
+    // Big prominent text banner in the 800px flat plain runway
+    const cont = this.add.container(px(13), px(14.5)).setDepth(35);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0d0f16, 0.88);
+    bg.lineStyle(2, 0x4aa3ff, 0.7);
+    bg.fillRoundedRect(-280, -60, 560, 120, 10);
+    bg.strokeRoundedRect(-280, -60, 560, 120, 10);
+
+    const moveTxt = this.add
+      .text(0, -32, "🕹️ LEFT JOYSTICK / [A][D] / [←][→] TO MOVE LEFT & RIGHT", {
+        fontFamily: "monospace",
+        fontSize: "15px",
+        color: "#e8ecf5",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    const jumpTxt = this.add
+      .text(0, 2, "⬆️ (A) BUTTON / [W] / [↑] TO JUMP", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#ffd166",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    const subTxt = this.add
+      .text(0, 34, "P1 Blue: [W][A][D] · Gamepad 1   |   P2 Red: [↑][←][→] · Gamepad 2", {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#8ea0bf",
+      })
+      .setOrigin(0.5);
+
+    cont.add([bg, moveTxt, jumpTxt, subTxt]);
+    this.tutorialBanner = cont;
   }
 
   private buildObjects() {
@@ -148,6 +208,16 @@ export class Level1Scene extends Phaser.Scene {
       const kind = (def.properties?.["kind"] as "gate" | "blue" | "red") ?? "gate";
       this.doors[def.name] = new Door(this, px(def.x), px(def.y), kind, this.solids);
     });
+
+    // Act 1 bridge
+    const bridgeDef = o.find((x) => x.type === "bridge" && x.name === "bridge-pit");
+    if (bridgeDef) {
+      const planks: PlankRect[] = [];
+      for (let i = 0; i < (bridgeDef.width ?? 0); i++) {
+        planks.push({ x: px(bridgeDef.x + i), y: px(bridgeDef.y), width: TILE, height: 16 });
+      }
+      this.bridges["bridge-pit"] = new Bridge(this, this.solids, planks);
+    }
 
     const exitDef = o.find((x) => x.type === "exit")!;
     this.add
@@ -191,6 +261,19 @@ export class Level1Scene extends Phaser.Scene {
 
     this.physics.add.collider(this.players, this.solids);
 
+    // Collide with Timed Platforms and trigger collapse countdown on landing
+    this.physics.add.collider(this.players, this.timedPlatformsGroup, (playerObj, platformTile) => {
+      const p = playerObj as Player;
+      const pb = p.body_;
+      const tileSprite = platformTile as Phaser.GameObjects.TileSprite;
+      if (pb.touching.down || pb.blocked.down || p.y <= tileSprite.y + 6) {
+        const timedPlat = this.timedPlatforms.find((tp) => tp.sprite === tileSprite);
+        if (timedPlat) {
+          timedPlat.trigger();
+        }
+      }
+    });
+
     // Hazard overlap: spikes kill BOTH players and restart at latest checkpoint
     this.physics.add.overlap(this.players, this.spikesGroup, () => {
       this.triggerSharedDeath();
@@ -223,16 +306,30 @@ export class Level1Scene extends Phaser.Scene {
       this.time.delayedCall(600, () => sp.destroy());
     });
 
-    // Restart level from beginning
+    // Respawn players at the active checkpoint and restore all disappearing platforms
     this.time.delayedCall(500, () => {
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-        this.scene.restart();
+        this.players.forEach((p) => p.respawn());
+        this.timedPlatforms.forEach((tp) => tp.reset());
+        this.dying = false;
+        this.cameras.main.fadeIn(400, 0, 0, 0);
       });
-      this.cameras.main.fadeOut(400, 0, 0, 0);
+      this.cameras.main.fadeOut(350, 0, 0, 0);
     });
   }
 
   private wireMechanics() {
+    // Act 1 Blue Button -> Extend Bridge
+    const bridgeBtn = this.buttons["btn-blue-bridge"];
+    const bridge = this.bridges["bridge-pit"];
+    if (bridgeBtn && bridge) {
+      bridgeBtn.onChange = (pressed) => {
+        if (pressed) {
+          bridge.extend(90);
+        }
+      };
+    }
+
     // Act 3 Dual Button Coordination
     const checkCoopDoor = () => {
       const upperBtn = this.buttons["btn-upper-blue"];
@@ -349,27 +446,49 @@ export class Level1Scene extends Phaser.Scene {
   }
 
   private buildHints() {
-    this.floatingHint(px(5), px(16.5), "ACT 1: Respect the spikes!", COLORS.blue, 8000);
-
     this.triggers = [
       {
-        x: px(30),
+        x: px(25),
         fired: false,
         run: () =>
           this.floatingHint(
-            px(38),
+            px(35),
             px(16),
-            "ACT 2: Synchronize jumps — one mistake resets both!",
+            "Easy 4-step parkour — simple jumps!",
+            COLORS.blue,
+            6000,
+          ),
+      },
+      {
+        x: px(47),
+        fired: false,
+        run: () =>
+          this.floatingHint(
+            px(53),
+            px(16),
+            "Blue: Stand on the blue button to extend the bridge!",
+            COLORS.blue,
+            7000,
+          ),
+      },
+      {
+        x: px(66),
+        fired: false,
+        run: () =>
+          this.floatingHint(
+            px(83),
+            px(13),
+            "ACT 2: Spike Gauntlet! Platforms crumble 2s after landing.",
             0xffd166,
             8000,
           ),
       },
       {
-        x: px(67),
+        x: px(100),
         fired: false,
         run: () =>
           this.floatingHint(
-            px(76),
+            px(111),
             px(11),
             "ACT 3: Press BOTH buttons at the SAME TIME to open the gate!",
             COLORS.blue,
@@ -384,6 +503,7 @@ export class Level1Scene extends Phaser.Scene {
 
     this.resolveStacking();
     this.players.forEach((p) => p.tick(delta));
+    this.timedPlatforms.forEach((tp) => tp.update(delta));
     Object.values(this.buttons).forEach((b) => b.update(this.players));
 
     this.updateCamera(delta);
@@ -452,13 +572,20 @@ export class Level1Scene extends Phaser.Scene {
       }
     });
 
+    // Fade tutorial banner once players move forward past tile 24
+    if (lead > px(24) && this.tutorialBanner) {
+      if (this.tutorialBanner.alpha > 0) {
+        this.tutorialBanner.alpha = Math.max(0, this.tutorialBanner.alpha - 0.05);
+      }
+    }
+
     const trail = Math.min(this.blue.x, this.red.x);
     this.checkpoints.forEach((cx, i) => {
       if (i > this.checkpointIndex && trail > cx) {
         this.checkpointIndex = i;
         const y = px(20) - 20;
-        this.blue.setSpawn(cx + 24, y);
-        this.red.setSpawn(cx + 72, y);
+        this.blue.setSpawn(cx, y);
+        this.red.setSpawn(cx + 32, y);
       }
     });
   }

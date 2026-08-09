@@ -1,13 +1,12 @@
 import * as Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
-import { DemoLevelScene } from "./scenes/DemoLevelScene";
 import { Level1Scene } from "./scenes/Level1Scene";
 import { Level2Scene } from "./scenes/Level2Scene";
 import { Level3Scene } from "./scenes/Level3Scene";
 import { CreditsScene } from "./scenes/CreditsScene";
 import { COLORS, PHYSICS } from "./utils/constants";
 
-export function createGame(parent: HTMLElement, initialLevel = "DemoLevel"): Phaser.Game {
+export function createGame(parent: HTMLElement, initialLevel = "Level1"): Phaser.Game {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -27,7 +26,7 @@ export function createGame(parent: HTMLElement, initialLevel = "DemoLevel"): Pha
         debug: false,
       },
     },
-    scene: [BootScene, DemoLevelScene, Level1Scene, Level2Scene, Level3Scene, CreditsScene],
+    scene: [BootScene, Level1Scene, Level2Scene, Level3Scene, CreditsScene],
   });
 
   game.registry.set("initialLevel", initialLevel);

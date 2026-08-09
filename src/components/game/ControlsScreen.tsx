@@ -49,16 +49,8 @@ export function ControlsScreen({ onStart }: ControlsScreenProps) {
 
       <div className="flex flex-wrap justify-center gap-4">
         <button
-          onClick={() => onStart("DemoLevel")}
-          className="group relative inline-flex items-center gap-3 rounded-md bg-primary px-6 py-4 font-pixel text-xs text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
-        >
-          START DEMO LEVEL
-          <span className="transition-transform group-hover:translate-x-1">▶</span>
-        </button>
-
-        <button
           onClick={() => onStart("Level1")}
-          className="group relative inline-flex items-center gap-3 rounded-md border-2 border-primary bg-background px-6 py-4 font-pixel text-xs text-primary transition-transform hover:-translate-y-0.5 hover:bg-accent active:translate-y-0"
+          className="group relative inline-flex items-center gap-3 rounded-md bg-primary px-6 py-4 font-pixel text-xs text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
         >
           START LEVEL 1
           <span className="transition-transform group-hover:translate-x-1">▶</span>

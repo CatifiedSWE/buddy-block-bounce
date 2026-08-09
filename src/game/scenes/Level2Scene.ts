@@ -24,9 +24,13 @@ export class Level2Scene extends Phaser.Scene {
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private spikesGroup!: Phaser.Physics.Arcade.StaticGroup;
 
-  private exitZone!: Phaser.Geom.Rectangle;
-  private fakeExitZone!: Phaser.Geom.Rectangle;
-  private fakeExitTriggered = false;
+  private startExitZone!: Phaser.Geom.Rectangle;
+  private endExitZone!: Phaser.Geom.Rectangle;
+  private startDoorBanner: Phaser.GameObjects.Text | null = null;
+  private endDoorBanner: Phaser.GameObjects.Text | null = null;
+  private startDoorFakeTriggered = false;
+  private endDoorTrollTriggered = false;
+  private realExitIsAtStart = false;
 
   private exitTimer = 0;
   private finished = false;
@@ -39,9 +43,16 @@ export class Level2Scene extends Phaser.Scene {
   private triggers: Array<{ x: number; fired: boolean; run: () => void }> = [];
   private camZoom = 1;
 
-  // Act 2 Collapsing floor (x: 15..18)
-  private collapsingPlanks: Phaser.GameObjects.TileSprite[] = [];
-  private floorTrapTriggered = false;
+  // Collapsing floor traps (Trap 1: x=18..21, Trap 2: x=68..69 @ 2187, Trap 3: x=111..112 @ 3600)
+  private trap1Planks: Phaser.GameObjects.TileSprite[] = [];
+  private trap2Planks: Phaser.GameObjects.TileSprite[] = [];
+  private trap3Planks: Phaser.GameObjects.TileSprite[] = [];
+  private floorTrap1Triggered = false;
+  private floorTrap2Triggered = false;
+  private floorTrap3Triggered = false;
+  private pit1Spikes: Phaser.GameObjects.Image[] = [];
+  private pit2Spikes: Phaser.GameObjects.Image[] = [];
+  private pit3Spikes: Phaser.GameObjects.Image[] = [];
 
   // Act 3 Left Spike Chase — purely visual, manually moved each frame
   private chaserSprites: Phaser.GameObjects.Image[] = [];
@@ -51,11 +62,12 @@ export class Level2Scene extends Phaser.Scene {
   private chaserW = TILE * 2; // visual width
   private readonly leftSpikeSpeed = 220.5; // 105 % of 210
 
-  // Act 4 Fast Harmless Right Spikes (150% speed = 315 px/s)
+  // Act 4 Fast Harmless Right Spikes (200% speed = 420 px/s)
   private fastRightSprites: Phaser.GameObjects.Image[] = [];
   private fastRightSpikesActive = false;
-  private readonly rightSpikeSpeed = 315;
+  private readonly rightSpikeSpeed = 420; // 200 % of 210
   private harmlessRightTriggered = false;
+  private fakeSpikeMessageShown = false;
 
   // Act 4 Non-freezing warning containers
   private pitWarningContainer: Phaser.GameObjects.Container | null = null;
@@ -72,11 +84,25 @@ export class Level2Scene extends Phaser.Scene {
     this.dying = false;
     this.finished = false;
     this.isFrozen = false;
-    this.fakeExitTriggered = false;
-    this.floorTrapTriggered = false;
+    this.startDoorFakeTriggered = false;
+    this.endDoorTrollTriggered = false;
+    this.realExitIsAtStart = false;
+    this.startDoorBanner = null;
+    this.endDoorBanner = null;
+    this.exitTimer = 0;
+    this.floorTrap1Triggered = false;
+    this.floorTrap2Triggered = false;
+    this.floorTrap3Triggered = false;
+    this.trap1Planks = [];
+    this.trap2Planks = [];
+    this.trap3Planks = [];
+    this.pit1Spikes = [];
+    this.pit2Spikes = [];
+    this.pit3Spikes = [];
     this.spikeChaseActive = false;
     this.fastRightSpikesActive = false;
     this.harmlessRightTriggered = false;
+    this.fakeSpikeMessageShown = false;
     this.pitWarningTriggered = false;
     this.justKiddingTriggered = false;
     this.pitWarningContainer = null;
@@ -96,14 +122,7 @@ export class Level2Scene extends Phaser.Scene {
     this.buildBackground(worldW, worldH);
 
     this.solids = this.physics.add.staticGroup();
-    LEVEL_2.solids.forEach((r) => {
-      if (this.floorTrapTriggered && r.x === 0 && r.y === 20 && r.width === 32) {
-        this.addSolid(toRect({ x: 0, y: 20, width: 18, height: 6 }));
-        this.addSolid(toRect({ x: 22, y: 20, width: 10, height: 6 }));
-      } else {
-        this.addSolid(toRect(r));
-      }
-    });
+    this.rebuildSolids();
 
     this.spikesGroup = this.physics.add.staticGroup();
     this.buildSpikes();
@@ -159,7 +178,40 @@ export class Level2Scene extends Phaser.Scene {
     this.solids.add(tile);
   }
 
+  private rebuildSolids() {
+    this.solids.clear(true, true);
+    LEVEL_2.solids.forEach((r) => {
+      if (r.x === 0 && r.y === 20 && r.width === 32) {
+        if (this.floorTrap1Triggered) {
+          this.addSolid(toRect({ x: 0, y: 20, width: 18, height: 6 }));
+          this.addSolid(toRect({ x: 22, y: 20, width: 10, height: 6 }));
+        } else {
+          this.addSolid(toRect(r));
+        }
+      } else if (r.x === 68 && r.y === 20 && r.width === 5) {
+        if (this.floorTrap2Triggered) {
+          this.addSolid(toRect({ x: 72, y: 20, width: 1, height: 6 }));
+        } else {
+          this.addSolid(toRect(r));
+        }
+      } else if (r.x === 91 && r.y === 20 && r.width === 30) {
+        if (this.floorTrap3Triggered) {
+          this.addSolid(toRect({ x: 91, y: 20, width: 21, height: 6 }));
+          this.addSolid(toRect({ x: 116, y: 20, width: 5, height: 6 }));
+        } else {
+          this.addSolid(toRect(r));
+        }
+      } else {
+        this.addSolid(toRect(r));
+      }
+    });
+  }
+
   private buildSpikes() {
+    this.pit1Spikes = [];
+    this.pit2Spikes = [];
+    this.pit3Spikes = [];
+
     (LEVEL_2.spikes ?? []).forEach((s) => {
       const r = toRect(s);
       for (let x = r.x; x < r.x + r.width; x += TILE) {
@@ -170,33 +222,50 @@ export class Level2Scene extends Phaser.Scene {
           .setVisible(false)
           .setAlpha(0);
         this.spikesGroup.add(spikeSprite);
+
+        if (s.x === 18) {
+          this.pit1Spikes.push(spikeSprite);
+        } else if (s.x === 68) {
+          this.pit2Spikes.push(spikeSprite);
+        } else if (s.x === 112) {
+          this.pit3Spikes.push(spikeSprite);
+        }
       }
     });
   }
 
-  // ─── Collapsing floor ────────────────────────────────────────────────────────
+  // ─── Collapsing floors (Trap 1: x=18..21, Trap 2: x=68..71 @ 2187, Trap 3: x=112..115 @ 3600) ─
 
   private buildCollapsingFloor() {
-    this.collapsingPlanks = [];
-    const trapX = px(18);
-    const trapY = px(20);
-    const trapW = px(4);
+    this.trap1Planks = [];
+    this.trap2Planks = [];
+    this.trap3Planks = [];
 
-    if (this.floorTrapTriggered) {
-      // On retry after trap fired: pit spikes remain revealed
-      this.spikesGroup.getChildren().forEach((sp) => {
-        (sp as Phaser.GameObjects.Image).setVisible(true).setAlpha(1);
-      });
-      return;
-    }
-
-    // On 1st attempt: build seamless overlay planks covering x=18..21
-    for (let x = trapX; x < trapX + trapW; x += TILE) {
+    // Trap 1 (x: 18..21, 4 tiles wide)
+    for (let x = px(18); x < px(18 + 4); x += TILE) {
       const plank = this.add
-        .tileSprite(x, trapY, TILE, TILE, TEX.stone)
+        .tileSprite(x, px(20), TILE, TILE, TEX.stone)
         .setOrigin(0, 0)
         .setDepth(6);
-      this.collapsingPlanks.push(plank);
+      this.trap1Planks.push(plank);
+    }
+
+    // Trap 2 (x: 68..71, user coord x: 2187.48, 4 tiles wide towards right)
+    for (let x = px(68); x < px(68 + 4); x += TILE) {
+      const plank = this.add
+        .tileSprite(x, px(20), TILE, TILE, TEX.stone)
+        .setOrigin(0, 0)
+        .setDepth(6);
+      this.trap2Planks.push(plank);
+    }
+
+    // Trap 3 (x: 112..115, user coord x: 3600.65, 4 tiles wide towards right)
+    for (let x = px(112); x < px(112 + 4); x += TILE) {
+      const plank = this.add
+        .tileSprite(x, px(20), TILE, TILE, TEX.stone)
+        .setOrigin(0, 0)
+        .setDepth(6);
+      this.trap3Planks.push(plank);
     }
   }
 
@@ -244,16 +313,15 @@ export class Level2Scene extends Phaser.Scene {
   private buildObjects() {
     const o = LEVEL_2.objects;
 
-    // Act 1 Fake Exit Door
-    const fakeExitDef = o.find((x) => x.name === "fake-exit")!;
+    // Start Door at x: 3 (initially fake troll, becomes REAL exit once end door is reached)
+    const startDoorDef = o.find((x) => x.name === "fake-exit")!;
     this.add
-      .image(px(fakeExitDef.x), px(fakeExitDef.y), TEX.exit)
+      .image(px(startDoorDef.x), px(startDoorDef.y), TEX.exit)
       .setOrigin(0.5, 1)
       .setDepth(2);
 
-    // Act 1 "EMERGENCY EXIT" Big Banner
-    this.add
-      .text(px(fakeExitDef.x), px(fakeExitDef.y) - 135, "🚨 EMERGENCY EXIT 🚨", {
+    this.startDoorBanner = this.add
+      .text(px(startDoorDef.x), px(startDoorDef.y) - 135, "🚨 EMERGENCY EXIT 🚨", {
         fontFamily: "monospace",
         fontSize: "18px",
         color: "#ffdd44",
@@ -264,23 +332,35 @@ export class Level2Scene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(15);
 
-    this.fakeExitZone = new Phaser.Geom.Rectangle(
-      px(fakeExitDef.x) - 48,
-      px(fakeExitDef.y) - 128,
+    this.startExitZone = new Phaser.Geom.Rectangle(
+      px(startDoorDef.x) - 48,
+      px(startDoorDef.y) - 128,
       96,
       128,
     );
 
-    // Act 4 Real Exit Door at x: 113
-    const realExitDef = o.find((x) => x.name === "real-exit")!;
+    // End Door at x: 113 (looks real at first, becomes the ultimate troll door)
+    const endDoorDef = o.find((x) => x.name === "real-exit")!;
     this.add
-      .image(px(realExitDef.x), px(realExitDef.y), TEX.exit)
+      .image(px(endDoorDef.x), px(endDoorDef.y), TEX.exit)
       .setOrigin(0.5, 1)
       .setDepth(2);
 
-    this.exitZone = new Phaser.Geom.Rectangle(
-      px(realExitDef.x) - 36,
-      px(realExitDef.y) - 128,
+    this.endDoorBanner = this.add
+      .text(px(endDoorDef.x), px(endDoorDef.y) - 135, "🚪 EXIT 🚪", {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: "#4aa3ff",
+        backgroundColor: "#111622dd",
+        padding: { x: 10, y: 5 },
+        align: "center",
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(15);
+
+    this.endExitZone = new Phaser.Geom.Rectangle(
+      px(endDoorDef.x) - 36,
+      px(endDoorDef.y) - 128,
       72,
       128,
     );
@@ -332,12 +412,18 @@ export class Level2Scene extends Phaser.Scene {
       {
         x: px(17.5),
         fired: false,
-        run: () => this.triggerCollapsingFloor(),
+        run: () => this.triggerFloorTrap1(),
       },
       {
         x: px(31),
         fired: false,
         run: () => this.triggerSpikeChase(),
+      },
+      // Collapsing Pit 2 at user coordinate x: 2187.48 (x: 68..69)
+      {
+        x: 2170,
+        fired: false,
+        run: () => this.triggerFloorTrap2(),
       },
       {
         x: px(91),
@@ -350,47 +436,109 @@ export class Level2Scene extends Phaser.Scene {
         fired: false,
         run: () => this.triggerPitWarning(),
       },
-      // Just Kidding warning 5 tiles away from exit (exit at x=113, so 113-5 = 108)
+      // Collapsing Pit 3 at exit door (4 tiles wide at x: 112..115, user coord x: 3600.65)
       {
-        x: px(108),
+        x: 3570,
         fired: false,
-        run: () => this.triggerJustKidding(),
+        run: () => this.triggerFloorTrap3(),
       },
     ];
   }
 
-  // ─── Collapsing floor trigger ─────────────────────────────────────────────────
+  // ─── Collapsing floor traps ───────────────────────────────────────────────────
 
-  private triggerCollapsingFloor() {
-    if (this.floorTrapTriggered) return;
-    this.floorTrapTriggered = true;
+  private triggerFloorTrap1() {
+    if (this.floorTrap1Triggered) return;
+    this.floorTrap1Triggered = true;
     sfx.trap();
     this.cameras.main.shake(250, 0.01);
 
-    // Reveal spikes inside the pit as the floor drops
-    this.spikesGroup.getChildren().forEach((sp) => {
-      (sp as Phaser.GameObjects.Image).setVisible(true).setAlpha(1);
-    });
-
-    // Re-build solids to split continuous ground (x:0..32) into left (0..18) and right (22..32)
-    this.solids.clear(true, true);
-    LEVEL_2.solids.forEach((r) => {
-      if (r.x === 0 && r.y === 20 && r.width === 32) {
-        this.addSolid(toRect({ x: 0, y: 20, width: 18, height: 6 }));
-        this.addSolid(toRect({ x: 22, y: 20, width: 10, height: 6 }));
-      } else {
-        this.addSolid(toRect(r));
-      }
-    });
+    // Reveal spikes inside Pit 1
+    this.pit1Spikes.forEach((sp) => sp.setVisible(true).setAlpha(1));
+    this.rebuildSolids();
 
     // Animate falling planks
-    this.collapsingPlanks.forEach((plank, i) => {
+    this.trap1Planks.forEach((plank, i) => {
       this.tweens.add({
         targets: plank,
         y: plank.y + 600,
         angle: Phaser.Math.Between(-30, 30),
         alpha: 0.1,
         delay: i * 40,
+        duration: 800,
+        ease: "Quad.easeIn",
+        onComplete: () => plank.destroy(),
+      });
+    });
+  }
+
+  private triggerFloorTrap2() {
+    if (this.floorTrap2Triggered) return;
+    this.floorTrap2Triggered = true;
+    sfx.trap();
+    this.cameras.main.shake(250, 0.01);
+
+    this.rebuildSolids();
+
+    // Reveal 4 spikes from left to right with staggered pop-up animation
+    this.pit2Spikes.forEach((sp, i) => {
+      this.time.delayedCall(i * 80, () => {
+        sp.setVisible(true).setAlpha(1);
+        sp.setScale(1, 0.2);
+        this.tweens.add({
+          targets: sp,
+          scaleY: 1,
+          duration: 150,
+          ease: "Back.easeOut",
+        });
+      });
+    });
+
+    // Animate 4 falling planks from left to right
+    this.trap2Planks.forEach((plank, i) => {
+      this.tweens.add({
+        targets: plank,
+        y: plank.y + 600,
+        angle: Phaser.Math.Between(-30, 30),
+        alpha: 0.1,
+        delay: i * 80,
+        duration: 800,
+        ease: "Quad.easeIn",
+        onComplete: () => plank.destroy(),
+      });
+    });
+  }
+
+  private triggerFloorTrap3() {
+    if (this.floorTrap3Triggered) return;
+    this.floorTrap3Triggered = true;
+    sfx.trap();
+    this.cameras.main.shake(250, 0.01);
+
+    this.rebuildSolids();
+
+    // Reveal 4 spikes from left to right with staggered pop-up animation
+    this.pit3Spikes.forEach((sp, i) => {
+      this.time.delayedCall(i * 80, () => {
+        sp.setVisible(true).setAlpha(1);
+        sp.setScale(1, 0.2);
+        this.tweens.add({
+          targets: sp,
+          scaleY: 1,
+          duration: 150,
+          ease: "Back.easeOut",
+        });
+      });
+    });
+
+    // Animate 4 falling planks from left to right
+    this.trap3Planks.forEach((plank, i) => {
+      this.tweens.add({
+        targets: plank,
+        y: plank.y + 600,
+        angle: Phaser.Math.Between(-30, 30),
+        alpha: 0.1,
+        delay: i * 80,
         duration: 800,
         ease: "Quad.easeIn",
         onComplete: () => plank.destroy(),
@@ -464,30 +612,75 @@ export class Level2Scene extends Phaser.Scene {
   // ─── Harmless right spikes trigger ───────────────────────────────────────────
 
   private triggerHarmlessRightSpikes() {
-    if (this.harmlessRightTriggered) return;
+    if (this.fastRightSpikesActive || this.isFrozen || this.harmlessRightTriggered) return;
     this.harmlessRightTriggered = true;
-    this.fastRightSpikesActive = true;
+    this.isFrozen = true; // Hold player movement during reveal animation
+
+    // Freeze player movement
+    this.players.forEach((p) => {
+      p.body_.setVelocity(0, 0);
+      p.body_.setAcceleration(0, 0);
+    });
 
     sfx.trap();
-    this.cameras.main.shake(300, 0.012);
+    this.cameras.main.shake(300, 0.015);
+
+    const leadX = Math.max(this.blue.x, this.red.x);
+    const playerMidX = (this.blue.x + this.red.x) / 2;
+    const midY = (this.blue.y + this.red.y) / 2 - 40;
 
     const startX = px(112);
     const worldH = px(LEVEL_2.height);
     const rowCount = Math.ceil(worldH / TILE) + 9;
 
+    // Make right spike wall visible immediately at t=0s
     this.fastRightSprites.forEach((sp, idx) => {
       const rowIdx = idx % rowCount;
       sp.setPosition(startX, -6 * TILE + rowIdx * TILE);
       sp.setVisible(true);
       sp.setAlpha(1);
     });
+
+    // 1. Pan camera RIGHT to reveal spike wall ahead of players (no zoom out)
+    const spikeRevealX = startX - 160;
+    this.cameras.main.pan(spikeRevealX, midY, 700, "Sine.easeInOut");
+
+    // 2. At 800ms, display warning hint and pan camera back LEFT to players
+    this.time.delayedCall(800, () => {
+      this.floatingHint(
+        leadX + 80,
+        px(14),
+        "⚠ SPIKE WALL INCOMING! RUN! 🏃‍♂️💨",
+        0xff5a55,
+        4000,
+      );
+      this.cameras.main.pan(playerMidX, midY, 900, "Sine.easeInOut");
+    });
+
+    // 3. At 1800ms, start spike wall movement!
+    this.time.delayedCall(1800, () => {
+      this.fastRightSpikesActive = true;
+    });
+
+    // 4. At 2100ms, unfreeze players so they can run!
+    this.time.delayedCall(2100, () => {
+      this.isFrozen = false;
+    });
   }
 
-  // ─── PIT AHEAD warning (15 tiles away from exit, NO control freeze) ──────────
+  // ─── PIT AHEAD warning (15 tiles away from exit, 2 seconds freeze) ─────────
 
   private triggerPitWarning() {
     if (this.pitWarningTriggered || this.finished) return;
     this.pitWarningTriggered = true;
+    this.isFrozen = true;
+
+    // Freeze player movement
+    this.players.forEach((p) => {
+      p.body_.setVelocity(0, 0);
+      p.body_.setAcceleration(0, 0);
+    });
+
     sfx.buttonOn();
 
     const cam = this.cameras.main;
@@ -510,9 +703,15 @@ export class Level2Scene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.pitWarningContainer.add(this.pitWarningText);
+
+    // After 2 seconds of PIT AHEAD: unfreeze scene and show "Just kidding. 😂"
+    this.time.delayedCall(2000, () => {
+      this.isFrozen = false;
+      this.triggerJustKidding();
+    });
   }
 
-  // ─── Just Kidding warning (5 tiles away from exit, NO control freeze) ─────────
+  // ─── Just Kidding warning ───────────────────────────────────────────────────
 
   private triggerJustKidding() {
     if (this.justKiddingTriggered || this.finished) return;
@@ -520,15 +719,29 @@ export class Level2Scene extends Phaser.Scene {
     sfx.save();
 
     if (!this.pitWarningContainer) {
-      this.triggerPitWarning();
-    }
-
-    if (this.pitWarningBox && this.pitWarningText) {
+      const cam = this.cameras.main;
+      const cx = cam.width / 2;
+      const cy = 70;
+      this.pitWarningContainer = this.add.container(cx, cy).setScrollFactor(0).setDepth(200);
+      this.pitWarningBox = this.add
+        .rectangle(0, 0, 420, 56, 0x0d0f16, 0.95)
+        .setStrokeStyle(3, 0x4aa3ff);
+      this.pitWarningContainer.add(this.pitWarningBox);
+      this.pitWarningText = this.add
+        .text(0, 0, "Just kidding. 😂", {
+          fontFamily: "monospace",
+          fontSize: "22px",
+          color: "#4aa3ff",
+          align: "center",
+        })
+        .setOrigin(0.5);
+      this.pitWarningContainer.add(this.pitWarningText);
+    } else if (this.pitWarningBox && this.pitWarningText) {
       this.pitWarningBox.setStrokeStyle(3, 0x4aa3ff);
       this.pitWarningText.setText("Just kidding. 😂").setColor("#4aa3ff");
     }
 
-    this.time.delayedCall(1200, () => {
+    this.time.delayedCall(1500, () => {
       if (this.pitWarningContainer) {
         this.tweens.add({
           targets: this.pitWarningContainer,
@@ -559,6 +772,8 @@ export class Level2Scene extends Phaser.Scene {
     this.chaserX = -9999;
     this.chaserHitbox.setPosition(-9999, 0);
     this.chaserSprites.forEach((sp) => sp.setVisible(false).setAlpha(0));
+    this.fastRightSpikesActive = false;
+    this.fastRightSprites.forEach((sp) => sp.setVisible(false).setAlpha(0));
 
     // Destroy warning container if present
     if (this.pitWarningContainer) {
@@ -631,14 +846,13 @@ export class Level2Scene extends Phaser.Scene {
   override update(_time: number, delta: number) {
     if (this.finished || this.dying) return;
 
-    this.checkFakeExit();
-
     if (this.isFrozen) {
       this.players.forEach((p) => {
         p.body_.setVelocity(0, 0);
         p.body_.setAcceleration(0, 0);
       });
       this.updateChaserWall(delta);
+      this.updateFastRightSpikes(delta);
       return;
     }
 
@@ -651,7 +865,7 @@ export class Level2Scene extends Phaser.Scene {
     this.updateCamera(delta);
     this.updateTriggers();
     this.updateRespawn();
-    this.updateExit(delta);
+    this.updateExits(delta);
   }
 
   private updateChaserWall(delta: number) {
@@ -703,37 +917,35 @@ export class Level2Scene extends Phaser.Scene {
     });
 
     const leadSpike = this.fastRightSprites[0];
-    if (leadSpike && leadSpike.x < px(60)) {
-      this.fastRightSpikesActive = false;
-      this.tweens.add({
-        targets: this.fastRightSprites,
-        alpha: 0,
-        duration: 400,
-        onComplete: () => this.fastRightSprites.forEach((sp) => sp.setVisible(false)),
-      });
+    if (leadSpike) {
+      const trailX = Math.min(this.blue.x, this.red.x);
+      // Trigger fake message as soon as spikes pass the players
+      if (!this.fakeSpikeMessageShown && (leadSpike.x < trailX - 20 || leadSpike.x < px(60))) {
+        this.fakeSpikeMessageShown = true;
+        sfx.buttonOff();
+        const playerMidX = (this.blue.x + this.red.x) / 2;
+        this.floatingHint(
+          playerMidX,
+          px(14),
+          "It's a fake! 😂 Keep going! →",
+          0x4aa3ff,
+          3500,
+        );
+      }
+
+      if (leadSpike.x < px(60)) {
+        this.fastRightSpikesActive = false;
+        this.tweens.add({
+          targets: this.fastRightSprites,
+          alpha: 0,
+          duration: 400,
+          onComplete: () => this.fastRightSprites.forEach((sp) => sp.setVisible(false)),
+        });
+      }
     }
   }
 
-  // ─── Fake exit check ─────────────────────────────────────────────────────────
 
-  private checkFakeExit() {
-    if (this.fakeExitTriggered) return;
-    const inFake = this.players.some((p) =>
-      Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.fakeExitZone),
-    );
-
-    if (inFake) {
-      this.fakeExitTriggered = true;
-      sfx.buttonOff();
-      this.floatingHint(
-        px(3),
-        px(16),
-        "You actually thought it'd be that easy? 😂\nHead RIGHT →",
-        0xffd166,
-        6000,
-      );
-    }
-  }
 
   // ─── Stacking ────────────────────────────────────────────────────────────────
 
@@ -823,14 +1035,78 @@ export class Level2Scene extends Phaser.Scene {
     }
   }
 
-  // ─── Exit ────────────────────────────────────────────────────────────────────
+  // ─── Exits (End door troll & Start door real exit) ───────────────────────────
 
-  private updateExit(delta: number) {
-    const bothIn = this.players.every((p) =>
-      Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.exitZone),
-    );
-    this.exitTimer = bothIn ? this.exitTimer + delta : 0;
-    if (this.exitTimer > 350) this.complete();
+  private updateExits(delta: number) {
+    // 1. End Door Check at x: 113
+    if (!this.endDoorTrollTriggered) {
+      const reachedEnd = this.players.some((p) =>
+        Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.endExitZone),
+      );
+
+      if (reachedEnd) {
+        this.endDoorTrollTriggered = true;
+        this.realExitIsAtStart = true;
+        sfx.trap();
+        this.cameras.main.shake(300, 0.015);
+
+        // Update banners
+        if (this.endDoorBanner) {
+          this.endDoorBanner.setText("🔒 FAKE EXIT 🔒").setColor("#ff5a55");
+        }
+        if (this.startDoorBanner) {
+          this.startDoorBanner.setText("✨ REAL EXIT ✨").setColor("#00ff88");
+          this.tweens.add({
+            targets: this.startDoorBanner,
+            scale: 1.15,
+            yoyo: true,
+            repeat: -1,
+            duration: 600,
+            ease: "Sine.easeInOut",
+          });
+        }
+
+        const endMidX = (this.blue.x + this.red.x) / 2;
+        this.floatingHint(
+          endMidX,
+          px(14),
+          "PSYCHE! 😂 This door is FAKE!\nThe REAL exit is back at the START!\n🏃‍♂️💨 RUN ALL THE WAY BACK! ←",
+          0xff5a55,
+          8000,
+        );
+      }
+    }
+
+    // 2. Start Door Check at x: 3
+    if (!this.realExitIsAtStart) {
+      // Early in the level: start door is a fake troll
+      if (!this.startDoorFakeTriggered) {
+        const inStartDoor = this.players.some((p) =>
+          Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.startExitZone),
+        );
+
+        if (inStartDoor) {
+          this.startDoorFakeTriggered = true;
+          sfx.buttonOff();
+          this.floatingHint(
+            px(3),
+            px(16),
+            "You actually thought it'd be that easy? 😂\nHead RIGHT →",
+            0xffd166,
+            6000,
+          );
+        }
+      }
+    } else {
+      // At the end of the level: start door is now the REAL EXIT!
+      const bothIn = this.players.every((p) =>
+        Phaser.Geom.Intersects.RectangleToRectangle(p.getBounds(), this.startExitZone),
+      );
+      this.exitTimer = bothIn ? this.exitTimer + delta : 0;
+      if (this.exitTimer > 350) {
+        this.complete();
+      }
+    }
   }
 
   private complete() {
